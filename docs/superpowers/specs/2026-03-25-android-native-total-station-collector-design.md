@@ -26,6 +26,7 @@ The native V1 must not implement or carry forward:
 - true-value input
 - manual measurement entry
 - file import into the app
+- direct Bluetooth file transfer into the app as the primary transport contract
 - traditional verification report generation
 - USB disk / dedicated cable transfer flows
 - background long-running collection service
@@ -42,23 +43,30 @@ These can be considered future V2/V3 directions if still justified later.
    - brand selector
    - model selector
    - options can be seeded from the existing MIT App Inventor project
-2. Bluetooth device selection
+2. Nearby Bluetooth discovery
+   - search nearby classic Bluetooth devices on site
+   - stop discovery
+   - show discovered devices with basic identity
+3. Pairing flow
+   - when a discovered device is not bonded, trigger the Android system pairing flow
+   - refresh bonded state after pairing succeeds
+4. Bluetooth device selection
    - list paired classic Bluetooth devices
    - allow reloading the paired-device list and selection
-3. Connection control
+5. Connection control
    - connect
    - disconnect
    - clear state transitions and error feedback
-4. Reception control
+6. Reception control
    - start receiving
    - stop receiving without forcing disconnect
-5. Real-time preview
+7. Real-time preview
    - ordered list of received records
    - visible status and total count
-6. Phone-side persistence
+8. Phone-side persistence
    - receive-and-save by default
    - current session survives app restart
-7. Export and share
+9. Export and share
    - user chooses `CSV` or `TXT` at export time
    - file is generated on phone
    - share via Android system sheet
@@ -73,6 +81,9 @@ Top area is split into two logical columns on the same screen:
   - brand
   - model
 - right: Bluetooth device selection
+  - nearby device list
+  - start discovery / stop discovery
+  - system pairing entry point for unpaired devices
   - paired device list
   - reload paired list
   - connect / disconnect
@@ -94,7 +105,12 @@ To keep metadata stable and keep the first version simple:
 - selectors unlock only after `Clear Current Session`
 - once connected, those selectors are also read-only
 - to change instrument metadata or target device, the user must disconnect first and clear the current session
-- reloading the paired-device list is not Bluetooth discovery or active scanning; it is only a fresh query of already paired devices
+- nearby discovery is active scanning and is distinct from reloading the paired-device list
+- reloading the paired-device list is only a fresh query of already bonded devices
+- discovery is allowed only while disconnected
+- if discovery is in progress and the user initiates connect, discovery must be cancelled first
+- V1 connection attempts are made only against bonded devices; unbonded devices must first go through the Android system pairing flow
+- if the session's selected target device loses its bond, the app may allow re-pairing that same saved device identity without clearing the current session
 
 ## Architecture
 
@@ -111,12 +127,15 @@ Recommended package structure:
 - `domain.model`
   - `InstrumentBrand`
   - `InstrumentModel`
+  - `DiscoveredBluetoothDeviceItem`
   - `BluetoothDeviceItem`
   - `MeasurementRecord`
   - `ExportFormat`
 - `data.instrument`
   - instrument catalog source
 - `data.bluetooth`
+  - Bluetooth discovery
+  - pairing handoff handling
   - Bluetooth connection and receive pipeline
 - `data.storage`
   - session persistence
@@ -182,6 +201,7 @@ V1 has exactly one persisted current session.
 - if the app restarts, the same current session data is restored, but Bluetooth connection state is not restored
 - after app restart, the app returns in a disconnected, not-receiving state and the user must reconnect and press `Start Receive` again
 - if the user disconnects and reconnects to the same instrument and same Bluetooth device, new records continue to append to the same current session
+- if the same saved target device loses bond state, the app may re-enter the Android system pairing flow for that same device and then continue the current session after bonding is restored
 - if the user wants to change brand, model, or Bluetooth target device, the current session must be cleared first
 - `Clear Current Session` deletes only the current session and its persisted records
 - V1 export scope is always the current session
@@ -209,16 +229,18 @@ V1 makes the following explicit transport assumptions:
 
 - target transport is classic Bluetooth RFCOMM / SPP-style communication
 - V1 uses the standard Serial Port Profile UUID: `00001101-0000-1000-8000-00805F9B34FB`
-- only already paired devices are in scope
-- V1 does not implement device discovery scanning
+- V1 supports on-site discovery of nearby devices, but only bonded devices enter the connection path
+- V1 uses Android system pairing rather than custom in-app pairing UX
 - connection attempts use a bounded timeout and can be cancelled by the user
 - if a device does not speak the expected SPP-style transport, V1 may fail to connect and that is treated as unsupported for this release
 
 Recommended defaults for implementation:
 
+- discovery is bounded and explicit; the app exposes start / stop discovery controls
 - connect timeout: `10 seconds`
 - read loop cancellation on explicit disconnect or app shutdown
 - a failed connection attempt must return the app to a clean disconnected state
+- discovery and RFCOMM connection are mutually exclusive; the app must cancel discovery before connecting
 - connected but not yet started receiving uses the same drain-and-discard behavior as paused state, so the device is not blocked by unread data
 
 ### Buffering Rules
@@ -327,18 +349,32 @@ The export step and the share step should be separate in code, even if they occu
 
 ## Permissions
 
-Target a modern Android baseline.
+Choose the Android version baseline for stability first, not for chasing the newest API level.
 
 Recommended release targets:
 
 - `minSdk = 26`
+- `compileSdk = current stable SDK available at implementation time`
 - `targetSdk = current stable target used by the project at implementation time`
+
+Version strategy:
+
+- do not set the product contract to “Android 15+ only” for V1 unless deployment constraints later prove that is truly acceptable
+- prioritize correctness on Android 12+ because the Bluetooth permission model changes materially there
+- if field phones are mostly newer devices, focus manual verification on Android 13, 14, and 15, but keep runtime compatibility broader where practical
 
 Bluetooth permission handling must explicitly cover:
 
-- Android 12+ runtime permissions for paired-device access and connection
-- pre-Android-12 manifest Bluetooth permissions if needed for compatibility
+- Android 12+ runtime permissions for nearby-device discovery and connection
+- API 26-30 compatibility requirements for classic Bluetooth discovery and connection
 - the case where system Bluetooth is turned off before connect or during a session
+- the case where discovery permission is granted but connection permission is denied, and vice versa
+
+Concrete pre-Android-12 rule:
+
+- on Android 11 and lower, nearby classic Bluetooth discovery is blocked unless the app has the required location permission for discovery
+- V1 must explicitly request `ACCESS_FINE_LOCATION` on API 26-30 when discovery is used
+- if that permission is denied, the app must keep connect-to-bonded-device behavior available where possible, but show discovery as unavailable with a clear reason
 
 Guidelines:
 
@@ -373,6 +409,11 @@ Each model definition should carry at least:
 - `displayName`
 - `delimiterStrategy`
 
+Optional but recommended model metadata:
+
+- `expectedTransport = CLASSIC_BLUETOOTH_SPP`
+- `notes` for device-specific field guidance
+
 V1 delimiter strategy is selected from configuration, not inferred from incoming data. This makes the receive path more stable and keeps later model-specific adaptation straightforward.
 
 ## Minimum Verifiable Behavior
@@ -380,15 +421,17 @@ V1 delimiter strategy is selected from configuration, not inferred from incoming
 The native V1 is acceptable only if the following path can be verified end to end:
 
 1. select brand and model
-2. select a paired Bluetooth device
-3. connect successfully
-4. start receiving
-5. see records appear in preview
-6. stop receiving
-7. restart app and confirm current session is still present
-8. export as `CSV`
-9. export as `TXT`
-10. invoke Android share sheet for either file
+2. search nearby devices
+3. pair one unbonded device through the Android system pairing flow
+4. confirm that device appears in the paired-device list
+5. connect successfully
+6. start receiving
+7. see records appear in preview
+8. stop receiving
+9. restart app and confirm current session is still present
+10. export as `CSV`
+11. export as `TXT`
+12. invoke Android share sheet for either file
 
 ## Testing Strategy
 
@@ -408,6 +451,8 @@ Add unit coverage for:
 Perform targeted manual validation for:
 
 - permission grant / denial
+- discovery start / stop
+- pairing success / cancellation / failure
 - connect / disconnect state changes
 - start / stop receive
 - abnormal input handling
@@ -423,6 +468,7 @@ These are intentionally deferred, but the design should not block them:
 - automatic reconnection policies
 - cloud backup or sync
 - additional export formats
+- direct Bluetooth file-transfer adapters for specific instrument families if a documented, stable device path later justifies them
 - non-Bluetooth input sources such as USB or file-based imports
 
 ## Migration Note

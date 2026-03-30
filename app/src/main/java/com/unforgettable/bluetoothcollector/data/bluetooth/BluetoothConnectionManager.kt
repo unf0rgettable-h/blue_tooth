@@ -100,6 +100,13 @@ class BluetoothConnectionManager(
     @SuppressLint("MissingPermission")
     private fun ensureDiscoveryStoppedBeforeConnect() {
         val adapter = bluetoothAdapter ?: return
+        if (!permissionChecker.currentState().canDiscover) {
+            // In the split-permission case, connecting must still be possible even when
+            // discovery control is unavailable. Try to stop discovery if the platform
+            // allows it, but do not block the connect path on missing scan permission.
+            runCatching { adapter.cancelDiscovery() }
+            return
+        }
         val isDiscovering = runCatching { adapter.isDiscovering }
             .getOrElse { throw IllegalStateException("cannot_verify_discovery_state") }
         if (!isDiscovering) return

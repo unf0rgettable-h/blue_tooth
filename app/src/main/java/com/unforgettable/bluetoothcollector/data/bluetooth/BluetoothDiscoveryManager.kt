@@ -16,7 +16,7 @@ class BluetoothDiscoveryManager(
     private val bluetoothAdapter: BluetoothAdapter?,
     private val permissionChecker: BluetoothPermissionChecker,
 ) {
-    private val mutableIsDiscovering = MutableStateFlow(false)
+    private val mutableIsDiscovering = MutableStateFlow(currentAdapterDiscoveryState(bluetoothAdapter))
     private val mutableDiscoveredDevices = MutableStateFlow<List<DiscoveredBluetoothDeviceItem>>(emptyList())
 
     val isDiscovering: StateFlow<Boolean> = mutableIsDiscovering
@@ -47,6 +47,10 @@ class BluetoothDiscoveryManager(
                 BluetoothAdapter.ACTION_DISCOVERY_FINISHED -> {
                     mutableIsDiscovering.value = false
                 }
+
+                BluetoothAdapter.ACTION_DISCOVERY_STARTED -> {
+                    mutableIsDiscovering.value = true
+                }
             }
         }
     }
@@ -54,6 +58,7 @@ class BluetoothDiscoveryManager(
     fun register() {
         context.registerReceiver(receiver, IntentFilter(BluetoothDevice.ACTION_FOUND))
         context.registerReceiver(receiver, IntentFilter(BluetoothAdapter.ACTION_DISCOVERY_FINISHED))
+        context.registerReceiver(receiver, IntentFilter(BluetoothAdapter.ACTION_DISCOVERY_STARTED))
     }
 
     fun unregister() {
@@ -70,6 +75,10 @@ class BluetoothDiscoveryManager(
         val permissionDecision = BluetoothSessionPolicy.discoveryAvailability(permissionChecker.currentState())
         if (!permissionDecision.allowed) {
             mutableIsDiscovering.value = false
+            return false
+        }
+        if (currentAdapterDiscoveryState(bluetoothAdapter)) {
+            mutableIsDiscovering.value = true
             return false
         }
         if (mutableIsDiscovering.value && !cancelDiscovery()) {
@@ -113,5 +122,12 @@ class BluetoothDiscoveryManager(
     private fun safeBondState(device: BluetoothDevice): Int {
         return runCatching { device.bondState }
             .getOrDefault(BluetoothPermissionChecker.LEGACY_DISCOVERY_BOND_STATE_UNKNOWN)
+    }
+
+    companion object {
+        @SuppressLint("MissingPermission")
+        private fun currentAdapterDiscoveryState(adapter: BluetoothAdapter?): Boolean {
+            return runCatching { adapter?.isDiscovering == true }.getOrDefault(false)
+        }
     }
 }

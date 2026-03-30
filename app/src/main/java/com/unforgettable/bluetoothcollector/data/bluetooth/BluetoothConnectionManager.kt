@@ -20,6 +20,7 @@ class BluetoothConnectionManager(
 ) {
     private var socket: BluetoothSocket? = null
     private var inputStream: InputStream? = null
+    private var pendingSocket: BluetoothSocket? = null
 
     @SuppressLint("MissingPermission")
     suspend fun connect(
@@ -56,6 +57,7 @@ class BluetoothConnectionManager(
         }.getOrElse { throwable ->
             return Result.failure(throwable)
         }
+        pendingSocket = newSocket
         return suspendCancellableCoroutine { continuation ->
             val completed = AtomicBoolean(false)
             val timeoutExecutor = Executors.newSingleThreadScheduledExecutor()
@@ -64,22 +66,26 @@ class BluetoothConnectionManager(
                     newSocket.connect()
                     val newInputStream = newSocket.inputStream
                     if (completed.compareAndSet(false, true)) {
+                        pendingSocket = null
                         socket = newSocket
                         inputStream = newInputStream
                         if (continuation.isActive) {
                             continuation.resume(Result.success(Unit))
                         }
                     } else {
+                        pendingSocket = null
                         runCatching { newInputStream.close() }
                         runCatching { newSocket.close() }
                     }
                 } catch (throwable: Throwable) {
                     if (completed.compareAndSet(false, true) && continuation.isActive) {
+                        pendingSocket = null
                         socket = null
                         inputStream = null
                         runCatching { newSocket.close() }
                         continuation.resume(Result.failure(throwable))
                     } else {
+                        pendingSocket = null
                         runCatching { newSocket.close() }
                     }
                 } finally {
@@ -89,6 +95,7 @@ class BluetoothConnectionManager(
             connectThread.start()
             timeoutExecutor.schedule({
                 if (completed.compareAndSet(false, true)) {
+                    pendingSocket = null
                     socket = null
                     inputStream = null
                     runCatching { newSocket.close() }
@@ -99,6 +106,7 @@ class BluetoothConnectionManager(
             }, timeoutMillis, TimeUnit.MILLISECONDS)
             continuation.invokeOnCancellation {
                 if (completed.compareAndSet(false, true)) {
+                    pendingSocket = null
                     socket = null
                     inputStream = null
                     runCatching { newSocket.close() }
@@ -121,6 +129,8 @@ class BluetoothConnectionManager(
 
     fun handleAdapterStateChanged(state: Int): Boolean {
         return if (state == BluetoothAdapter.STATE_TURNING_OFF || state == BluetoothAdapter.STATE_OFF) {
+            runCatching { pendingSocket?.close() }
+            pendingSocket = null
             disconnect()
             true
         } else {
@@ -129,6 +139,8 @@ class BluetoothConnectionManager(
     }
 
     fun disconnect() {
+        runCatching { pendingSocket?.close() }
+        pendingSocket = null
         runCatching { inputStream?.close() }
         runCatching { socket?.close() }
         inputStream = null

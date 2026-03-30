@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.StateFlow
 class BluetoothDiscoveryManager(
     private val context: Context,
     private val bluetoothAdapter: BluetoothAdapter?,
+    private val permissionChecker: BluetoothPermissionChecker,
 ) {
     private val mutableIsDiscovering = MutableStateFlow(false)
     private val mutableDiscoveredDevices = MutableStateFlow<List<DiscoveredBluetoothDeviceItem>>(emptyList())
@@ -29,10 +30,15 @@ class BluetoothDiscoveryManager(
                 BluetoothDevice.ACTION_FOUND -> {
                     val device: BluetoothDevice? = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
                     if (device != null) {
+                        val permissionState = permissionChecker.currentState()
                         discoveredMap[device.address] = DiscoveredBluetoothDeviceItem(
-                            name = device.name,
+                            name = if (permissionState.canConnect) device.name else null,
                             address = device.address,
-                            bondState = device.bondState,
+                            bondState = if (permissionState.canConnect) {
+                                device.bondState
+                            } else {
+                                BluetoothPermissionChecker.LEGACY_DISCOVERY_BOND_STATE_UNKNOWN
+                            },
                         )
                         mutableDiscoveredDevices.value = discoveredMap.values.toList()
                     }
@@ -55,7 +61,17 @@ class BluetoothDiscoveryManager(
     }
 
     @SuppressLint("MissingPermission")
-    fun startDiscovery(): Boolean {
+    fun startDiscovery(connectionState: BluetoothConnectionState): Boolean {
+        val policyDecision = BluetoothSessionPolicy.canStartDiscovery(connectionState)
+        if (!policyDecision.allowed) {
+            mutableIsDiscovering.value = false
+            return false
+        }
+        val permissionDecision = BluetoothSessionPolicy.discoveryAvailability(permissionChecker.currentState())
+        if (!permissionDecision.allowed) {
+            mutableIsDiscovering.value = false
+            return false
+        }
         cancelDiscovery()
         discoveredMap.clear()
         mutableDiscoveredDevices.value = emptyList()

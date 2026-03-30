@@ -56,4 +56,8 @@ class BluetoothPermissionChecker(
     private fun isGranted(permission: String): Boolean {
         return ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
     }
+
+    companion object {
+        const val LEGACY_DISCOVERY_BOND_STATE_UNKNOWN: Int = -1
+    }
 }

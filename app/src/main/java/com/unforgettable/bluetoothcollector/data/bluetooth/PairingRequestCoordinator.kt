@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.SharedFlow
 
 class PairingRequestCoordinator(
     private val context: Context,
+    private val bondedDeviceManager: BondedDeviceManager,
 ) {
     private val mutableBondedAddresses = MutableSharedFlow<String>(extraBufferCapacity = 1)
     val bondedAddresses: SharedFlow<String> = mutableBondedAddresses
@@ -21,6 +22,7 @@ class PairingRequestCoordinator(
                 val device: BluetoothDevice? = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
                 val bondState = intent.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, BluetoothDevice.ERROR)
                 if (device != null && bondState == BluetoothDevice.BOND_BONDED) {
+                    bondedDeviceManager.refreshBondedDevices()
                     mutableBondedAddresses.tryEmit(device.address)
                 }
             }
@@ -36,7 +38,17 @@ class PairingRequestCoordinator(
     }
 
     @SuppressLint("MissingPermission")
-    fun requestBond(device: BluetoothDevice): Boolean {
+    fun requestBond(
+        device: BluetoothDevice,
+        currentSessionDeviceAddress: String? = null,
+    ): Boolean {
+        val rePairDecision = BluetoothSessionPolicy.canRePairSelectedDevice(
+            currentSessionDeviceAddress = currentSessionDeviceAddress,
+            targetDeviceAddress = device.address,
+        )
+        if (currentSessionDeviceAddress != null && !rePairDecision.allowed) {
+            return false
+        }
         return device.createBond()
     }
 }

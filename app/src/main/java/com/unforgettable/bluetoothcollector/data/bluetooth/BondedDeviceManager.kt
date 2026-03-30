@@ -8,13 +8,22 @@ import kotlinx.coroutines.flow.StateFlow
 
 class BondedDeviceManager(
     private val bluetoothAdapter: BluetoothAdapter?,
+    private val permissionChecker: BluetoothPermissionChecker,
 ) {
     private val mutableBondedDevices = MutableStateFlow<List<BondedBluetoothDeviceItem>>(emptyList())
     val bondedDevices: StateFlow<List<BondedBluetoothDeviceItem>> = mutableBondedDevices
 
     @SuppressLint("MissingPermission")
     fun refreshBondedDevices(): List<BondedBluetoothDeviceItem> {
-        val bondedDevices = bluetoothAdapter?.bondedDevices.orEmpty()
+        if (!permissionChecker.currentState().canConnect) {
+            mutableBondedDevices.value = emptyList()
+            return emptyList()
+        }
+        val bondedDevices = runCatching { bluetoothAdapter?.bondedDevices.orEmpty() }
+            .getOrElse {
+                mutableBondedDevices.value = emptyList()
+                return emptyList()
+            }
         val refreshed = bondedDevices
             .map { device ->
                 BondedBluetoothDeviceItem(

@@ -33,12 +33,17 @@ class BluetoothConnectionManager(
                     newSocket.connect()
                 }
                 future.get(timeoutMillis, TimeUnit.MILLISECONDS)
+                val newInputStream = newSocket.inputStream
                 socket = newSocket
-                inputStream = newSocket.inputStream
+                inputStream = newInputStream
             } catch (_: TimeoutException) {
+                socket = null
+                inputStream = null
                 runCatching { newSocket.close() }
                 throw IllegalStateException("bluetooth_connect_timeout")
             } catch (throwable: Throwable) {
+                socket = null
+                inputStream = null
                 runCatching { newSocket.close() }
                 throw throwable
             } finally {

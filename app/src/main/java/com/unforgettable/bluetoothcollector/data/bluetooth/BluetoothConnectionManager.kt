@@ -30,8 +30,6 @@ class BluetoothConnectionManager(
             if (!permissionDecision.allowed) {
                 throw IllegalStateException(permissionDecision.reason ?: "connect_permission_denied")
             }
-            runCatching { bluetoothAdapter?.cancelDiscovery() }
-            disconnect()
             val canConnectDecision = BluetoothSessionPolicy.canConnect(
                 BluetoothDeviceSnapshot(
                     address = device.address,
@@ -53,6 +51,8 @@ class BluetoothConnectionManager(
                     throw IllegalStateException(reconnectDecision.reason ?: "same_session_reconnect_not_allowed")
                 }
             }
+            ensureDiscoveryStoppedBeforeConnect()
+            disconnect()
             val newSocket = device.createRfcommSocketToServiceRecord(SPP_UUID)
             val executor = Executors.newSingleThreadExecutor()
             try {
@@ -95,6 +95,21 @@ class BluetoothConnectionManager(
         runCatching { socket?.close() }
         inputStream = null
         socket = null
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun ensureDiscoveryStoppedBeforeConnect() {
+        val adapter = bluetoothAdapter ?: return
+        val isDiscovering = runCatching { adapter.isDiscovering }
+            .getOrElse { throw IllegalStateException("cannot_verify_discovery_state") }
+        if (!isDiscovering) return
+        val cancelled = runCatching {
+            adapter.cancelDiscovery()
+            true
+        }.getOrDefault(false)
+        if (!cancelled) {
+            throw IllegalStateException("discovery_must_be_stopped_before_connect")
+        }
     }
 
     @SuppressLint("MissingPermission")

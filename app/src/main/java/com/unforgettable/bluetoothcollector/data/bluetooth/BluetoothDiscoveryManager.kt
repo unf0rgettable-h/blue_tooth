@@ -81,12 +81,24 @@ class BluetoothDiscoveryManager(
     }
 
     @SuppressLint("MissingPermission")
-    fun cancelDiscovery() {
+    fun cancelDiscovery(): Boolean {
         val adapter = bluetoothAdapter
-        if (permissionChecker.currentState().canDiscover && adapter?.isDiscovering == true) {
-            runCatching { adapter.cancelDiscovery() }
+        val isDiscovering = runCatching { adapter?.isDiscovering == true }.getOrDefault(false)
+        if (!isDiscovering) {
+            mutableIsDiscovering.value = false
+            return true
         }
-        mutableIsDiscovering.value = false
+        if (!permissionChecker.currentState().canDiscover) {
+            return false
+        }
+        val cancelled = runCatching {
+            adapter?.cancelDiscovery()
+            true
+        }.getOrDefault(false)
+        if (cancelled) {
+            mutableIsDiscovering.value = false
+        }
+        return cancelled
     }
 
     @SuppressLint("MissingPermission")

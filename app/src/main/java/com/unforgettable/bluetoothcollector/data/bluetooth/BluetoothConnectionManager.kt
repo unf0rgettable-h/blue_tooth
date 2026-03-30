@@ -25,6 +25,7 @@ class BluetoothConnectionManager(
     suspend fun connect(
         device: BluetoothDevice,
         currentSessionDeviceAddress: String? = null,
+        currentDiscoveryState: Boolean = false,
         timeoutMillis: Long = DEFAULT_CONNECT_TIMEOUT_MS,
     ): Result<Unit> {
         val newSocket = runCatching {
@@ -49,7 +50,7 @@ class BluetoothConnectionManager(
                     throw IllegalStateException(reconnectDecision.reason ?: "same_session_reconnect_not_allowed")
                 }
             }
-            ensureDiscoveryStoppedBeforeConnect()
+            ensureDiscoveryStoppedBeforeConnect(currentDiscoveryState = currentDiscoveryState)
             disconnect()
             device.createRfcommSocketToServiceRecord(SPP_UUID)
         }.getOrElse { throwable ->
@@ -135,17 +136,16 @@ class BluetoothConnectionManager(
     }
 
     @SuppressLint("MissingPermission")
-    private fun ensureDiscoveryStoppedBeforeConnect() {
+    private fun ensureDiscoveryStoppedBeforeConnect(currentDiscoveryState: Boolean) {
         val adapter = bluetoothAdapter ?: return
         if (!permissionChecker.currentState().canDiscover) {
-            // In the split-permission case, connecting must still be possible even when
-            // discovery control is unavailable. Try to stop discovery if the platform
-            // allows it, but do not block the connect path on missing scan permission.
-            runCatching { adapter.cancelDiscovery() }
+            if (currentDiscoveryState) {
+                throw IllegalStateException("cannot_control_active_discovery_state")
+            }
             return
         }
         val isDiscovering = runCatching { adapter.isDiscovering }
-            .getOrElse { throw IllegalStateException("cannot_verify_discovery_state") }
+            .getOrElse { if (currentDiscoveryState) true else throw IllegalStateException("cannot_verify_discovery_state") }
         if (!isDiscovering) return
         val cancelled = runCatching {
             adapter.cancelDiscovery()

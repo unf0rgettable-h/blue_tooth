@@ -105,7 +105,6 @@ class BluetoothConnectionManager(
         if (!isDiscovering) return
         val cancelled = runCatching {
             adapter.cancelDiscovery()
-            true
         }.getOrDefault(false)
         if (!cancelled) {
             throw IllegalStateException("discovery_must_be_stopped_before_connect")

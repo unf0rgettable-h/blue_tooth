@@ -92,8 +92,7 @@ class BluetoothDiscoveryManager(
             return false
         }
         val cancelled = runCatching {
-            adapter?.cancelDiscovery()
-            true
+            adapter?.cancelDiscovery() == true
         }.getOrDefault(false)
         if (cancelled) {
             mutableIsDiscovering.value = false

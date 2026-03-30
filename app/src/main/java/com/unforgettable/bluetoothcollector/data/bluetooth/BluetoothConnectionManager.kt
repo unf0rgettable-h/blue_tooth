@@ -25,12 +25,15 @@ class BluetoothConnectionManager(
         timeoutMillis: Long = DEFAULT_CONNECT_TIMEOUT_MS,
     ): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
-            bluetoothAdapter?.cancelDiscovery()
-            disconnect()
             val permissionDecision = BluetoothSessionPolicy.bondedConnectAvailability(permissionChecker.currentState())
             if (!permissionDecision.allowed) {
                 throw IllegalStateException(permissionDecision.reason ?: "connect_permission_denied")
             }
+            val permissionState = permissionChecker.currentState()
+            if (permissionState.canDiscover) {
+                runCatching { bluetoothAdapter?.cancelDiscovery() }
+            }
+            disconnect()
             val canConnectDecision = BluetoothSessionPolicy.canConnect(
                 BluetoothDeviceSnapshot(
                     address = device.address,

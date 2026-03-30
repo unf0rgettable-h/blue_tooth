@@ -53,6 +53,6 @@ class PairingRequestCoordinator(
         if (currentSessionDeviceAddress != null && !rePairDecision.allowed) {
             return false
         }
-        return device.createBond()
+        return runCatching { device.createBond() }.getOrDefault(false)
     }
 }

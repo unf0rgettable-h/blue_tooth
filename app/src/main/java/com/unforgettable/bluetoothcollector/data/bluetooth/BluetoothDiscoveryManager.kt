@@ -32,10 +32,10 @@ class BluetoothDiscoveryManager(
                     if (device != null) {
                         val permissionState = permissionChecker.currentState()
                         discoveredMap[device.address] = DiscoveredBluetoothDeviceItem(
-                            name = if (permissionState.canConnect) device.name else null,
+                            name = if (permissionState.canConnect) safeDeviceName(device) else null,
                             address = device.address,
                             bondState = if (permissionState.canConnect) {
-                                device.bondState
+                                safeBondState(device)
                             } else {
                                 BluetoothPermissionChecker.LEGACY_DISCOVERY_BOND_STATE_UNKNOWN
                             },
@@ -86,5 +86,16 @@ class BluetoothDiscoveryManager(
             bluetoothAdapter.cancelDiscovery()
         }
         mutableIsDiscovering.value = false
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun safeDeviceName(device: BluetoothDevice): String? {
+        return runCatching { device.name }.getOrNull()
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun safeBondState(device: BluetoothDevice): Int {
+        return runCatching { device.bondState }
+            .getOrDefault(BluetoothPermissionChecker.LEGACY_DISCOVERY_BOND_STATE_UNKNOWN)
     }
 }

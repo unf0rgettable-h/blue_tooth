@@ -26,6 +26,15 @@ class BluetoothConnectionManager(
         runCatching {
             bluetoothAdapter?.cancelDiscovery()
             disconnect()
+            val canConnectDecision = BluetoothSessionPolicy.canConnect(
+                BluetoothDeviceSnapshot(
+                    address = device.address,
+                    isBonded = isBonded(device),
+                ),
+            )
+            if (!canConnectDecision.allowed) {
+                throw IllegalStateException(canConnectDecision.reason ?: "connect_not_allowed")
+            }
             val newSocket = device.createRfcommSocketToServiceRecord(SPP_UUID)
             val executor = Executors.newSingleThreadExecutor()
             try {
@@ -68,6 +77,11 @@ class BluetoothConnectionManager(
         runCatching { socket?.close() }
         inputStream = null
         socket = null
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun isBonded(device: BluetoothDevice): Boolean {
+        return runCatching { device.bondState == BluetoothDevice.BOND_BONDED }.getOrDefault(false)
     }
 
     companion object {

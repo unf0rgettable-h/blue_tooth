@@ -27,7 +27,7 @@ class BondedDeviceManager(
         val refreshed = bondedDevices
             .map { device ->
                 BondedBluetoothDeviceItem(
-                    name = device.name,
+                    name = safeDeviceName(device),
                     address = device.address,
                 )
             }
@@ -39,5 +39,10 @@ class BondedDeviceManager(
     fun findSavedTarget(address: String?): BondedBluetoothDeviceItem? {
         if (address.isNullOrBlank()) return null
         return bondedDevices.value.firstOrNull { it.address == address } ?: refreshBondedDevices().firstOrNull { it.address == address }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun safeDeviceName(device: android.bluetooth.BluetoothDevice): String? {
+        return runCatching { device.name }.getOrNull()
     }
 }

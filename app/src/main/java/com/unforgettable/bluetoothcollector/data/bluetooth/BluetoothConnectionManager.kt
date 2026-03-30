@@ -18,9 +18,11 @@ class BluetoothConnectionManager(
     private val bluetoothAdapter: BluetoothAdapter?,
     private val permissionChecker: BluetoothPermissionChecker,
 ) {
+    private val stateLock = Any()
     private var socket: BluetoothSocket? = null
     private var inputStream: InputStream? = null
     private var pendingSocket: BluetoothSocket? = null
+    private var activeAttemptToken: Long = 0L
 
     @SuppressLint("MissingPermission")
     suspend fun connect(
@@ -57,7 +59,7 @@ class BluetoothConnectionManager(
         }.getOrElse { throwable ->
             return Result.failure(throwable)
         }
-        pendingSocket = newSocket
+        val attemptToken = beginAttempt(newSocket)
         return suspendCancellableCoroutine { continuation ->
             val completed = AtomicBoolean(false)
             val timeoutExecutor = Executors.newSingleThreadScheduledExecutor()
@@ -66,26 +68,29 @@ class BluetoothConnectionManager(
                     newSocket.connect()
                     val newInputStream = newSocket.inputStream
                     if (completed.compareAndSet(false, true)) {
-                        pendingSocket = null
-                        socket = newSocket
-                        inputStream = newInputStream
-                        if (continuation.isActive) {
-                            continuation.resume(Result.success(Unit))
+                        if (publishConnectedState(attemptToken, newSocket, newInputStream)) {
+                            if (continuation.isActive) {
+                                continuation.resume(Result.success(Unit))
+                            }
+                        } else {
+                            runCatching { newInputStream.close() }
+                            runCatching { newSocket.close() }
+                            if (continuation.isActive) {
+                                continuation.resume(Result.failure(IllegalStateException("bluetooth_connect_invalidated")))
+                            }
                         }
                     } else {
-                        pendingSocket = null
                         runCatching { newInputStream.close() }
                         runCatching { newSocket.close() }
                     }
                 } catch (throwable: Throwable) {
-                    if (completed.compareAndSet(false, true) && continuation.isActive) {
-                        pendingSocket = null
-                        socket = null
-                        inputStream = null
+                    if (completed.compareAndSet(false, true)) {
+                        clearOwnedState(attemptToken)
                         runCatching { newSocket.close() }
-                        continuation.resume(Result.failure(throwable))
+                        if (continuation.isActive) {
+                            continuation.resume(Result.failure(throwable))
+                        }
                     } else {
-                        pendingSocket = null
                         runCatching { newSocket.close() }
                     }
                 } finally {
@@ -95,9 +100,7 @@ class BluetoothConnectionManager(
             connectThread.start()
             timeoutExecutor.schedule({
                 if (completed.compareAndSet(false, true)) {
-                    pendingSocket = null
-                    socket = null
-                    inputStream = null
+                    clearOwnedState(attemptToken)
                     runCatching { newSocket.close() }
                     if (continuation.isActive) {
                         continuation.resume(Result.failure(IllegalStateException("bluetooth_connect_timeout")))
@@ -106,9 +109,7 @@ class BluetoothConnectionManager(
             }, timeoutMillis, TimeUnit.MILLISECONDS)
             continuation.invokeOnCancellation {
                 if (completed.compareAndSet(false, true)) {
-                    pendingSocket = null
-                    socket = null
-                    inputStream = null
+                    clearOwnedState(attemptToken)
                     runCatching { newSocket.close() }
                 }
                 timeoutExecutor.shutdownNow()
@@ -129,8 +130,6 @@ class BluetoothConnectionManager(
 
     fun handleAdapterStateChanged(state: Int): Boolean {
         return if (state == BluetoothAdapter.STATE_TURNING_OFF || state == BluetoothAdapter.STATE_OFF) {
-            runCatching { pendingSocket?.close() }
-            pendingSocket = null
             disconnect()
             true
         } else {
@@ -139,12 +138,15 @@ class BluetoothConnectionManager(
     }
 
     fun disconnect() {
-        runCatching { pendingSocket?.close() }
-        pendingSocket = null
-        runCatching { inputStream?.close() }
-        runCatching { socket?.close() }
-        inputStream = null
-        socket = null
+        synchronized(stateLock) {
+            activeAttemptToken += 1
+            runCatching { pendingSocket?.close() }
+            runCatching { inputStream?.close() }
+            runCatching { socket?.close() }
+            pendingSocket = null
+            inputStream = null
+            socket = null
+        }
     }
 
     @SuppressLint("MissingPermission")
@@ -170,6 +172,38 @@ class BluetoothConnectionManager(
     @SuppressLint("MissingPermission")
     private fun isBonded(device: BluetoothDevice): Boolean {
         return runCatching { device.bondState == BluetoothDevice.BOND_BONDED }.getOrDefault(false)
+    }
+
+    private fun beginAttempt(newSocket: BluetoothSocket): Long {
+        synchronized(stateLock) {
+            activeAttemptToken += 1
+            pendingSocket = newSocket
+            return activeAttemptToken
+        }
+    }
+
+    private fun publishConnectedState(
+        attemptToken: Long,
+        newSocket: BluetoothSocket,
+        newInputStream: InputStream,
+    ): Boolean {
+        synchronized(stateLock) {
+            if (activeAttemptToken != attemptToken) return false
+            pendingSocket = null
+            socket = newSocket
+            inputStream = newInputStream
+            return true
+        }
+    }
+
+    private fun clearOwnedState(attemptToken: Long) {
+        synchronized(stateLock) {
+            if (activeAttemptToken == attemptToken) {
+                pendingSocket = null
+                socket = null
+                inputStream = null
+            }
+        }
     }
 
     companion object {

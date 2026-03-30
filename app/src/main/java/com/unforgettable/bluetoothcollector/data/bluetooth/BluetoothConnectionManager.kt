@@ -60,17 +60,24 @@ class BluetoothConnectionManager(
                 try {
                     newSocket.connect()
                     val newInputStream = newSocket.inputStream
-                    socket = newSocket
-                    inputStream = newInputStream
-                    if (completed.compareAndSet(false, true) && continuation.isActive) {
-                        continuation.resume(Result.success(Unit))
+                    if (completed.compareAndSet(false, true)) {
+                        socket = newSocket
+                        inputStream = newInputStream
+                        if (continuation.isActive) {
+                            continuation.resume(Result.success(Unit))
+                        }
+                    } else {
+                        runCatching { newInputStream.close() }
+                        runCatching { newSocket.close() }
                     }
                 } catch (throwable: Throwable) {
-                    socket = null
-                    inputStream = null
-                    runCatching { newSocket.close() }
                     if (completed.compareAndSet(false, true) && continuation.isActive) {
+                        socket = null
+                        inputStream = null
+                        runCatching { newSocket.close() }
                         continuation.resume(Result.failure(throwable))
+                    } else {
+                        runCatching { newSocket.close() }
                     }
                 } finally {
                     timeoutExecutor.shutdownNow()

@@ -72,9 +72,13 @@ class BluetoothDiscoveryManager(
             mutableIsDiscovering.value = false
             return false
         }
-        cancelDiscovery()
-        discoveredMap.clear()
-        mutableDiscoveredDevices.value = emptyList()
+        if (mutableIsDiscovering.value && !cancelDiscovery()) {
+            return false
+        }
+        if (!mutableIsDiscovering.value) {
+            discoveredMap.clear()
+            mutableDiscoveredDevices.value = emptyList()
+        }
         val started = bluetoothAdapter?.startDiscovery() == true
         mutableIsDiscovering.value = started
         return started

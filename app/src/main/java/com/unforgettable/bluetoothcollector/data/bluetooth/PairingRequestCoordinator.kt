@@ -8,14 +8,15 @@ import android.content.Intent
 import android.content.IntentFilter
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 
 class PairingRequestCoordinator(
     private val context: Context,
     private val bondedDeviceManager: BondedDeviceManager,
     private val permissionChecker: BluetoothPermissionChecker,
 ) {
-    private val mutableBondedAddresses = MutableSharedFlow<String>(extraBufferCapacity = 1)
-    val bondedAddresses: SharedFlow<String> = mutableBondedAddresses
+    private val mutableBondedAddresses = MutableSharedFlow<String>(replay = 1, extraBufferCapacity = 1)
+    val bondedAddresses: SharedFlow<String> = mutableBondedAddresses.asSharedFlow()
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {

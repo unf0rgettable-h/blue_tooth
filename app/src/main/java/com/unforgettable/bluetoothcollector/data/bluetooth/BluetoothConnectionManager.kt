@@ -4,13 +4,16 @@ import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothSocket
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import java.io.InputStream
 import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
+import kotlin.coroutines.resume
 
 class BluetoothConnectionManager(
     private val bluetoothAdapter: BluetoothAdapter?,
@@ -24,57 +27,81 @@ class BluetoothConnectionManager(
         device: BluetoothDevice,
         currentSessionDeviceAddress: String? = null,
         timeoutMillis: Long = DEFAULT_CONNECT_TIMEOUT_MS,
-    ): Result<Unit> = withContext(Dispatchers.IO) {
-        runCatching {
-            val permissionDecision = BluetoothSessionPolicy.bondedConnectAvailability(permissionChecker.currentState())
-            if (!permissionDecision.allowed) {
-                throw IllegalStateException(permissionDecision.reason ?: "connect_permission_denied")
-            }
-            val canConnectDecision = BluetoothSessionPolicy.canConnect(
-                BluetoothDeviceSnapshot(
-                    address = device.address,
-                    isBonded = isBonded(device),
-                ),
+    ): Result<Unit> {
+        val permissionDecision = BluetoothSessionPolicy.bondedConnectAvailability(permissionChecker.currentState())
+        if (!permissionDecision.allowed) {
+            return Result.failure(IllegalStateException(permissionDecision.reason ?: "connect_permission_denied"))
+        }
+        val deviceSnapshot = BluetoothDeviceSnapshot(
+            address = device.address,
+            isBonded = isBonded(device),
+        )
+        val canConnectDecision = BluetoothSessionPolicy.canConnect(deviceSnapshot)
+        if (!canConnectDecision.allowed) {
+            return Result.failure(IllegalStateException(canConnectDecision.reason ?: "connect_not_allowed"))
+        }
+        if (currentSessionDeviceAddress != null) {
+            val reconnectDecision = BluetoothSessionPolicy.canReconnectSameSession(
+                currentSessionDeviceAddress = currentSessionDeviceAddress,
+                targetDevice = deviceSnapshot,
             )
-            if (!canConnectDecision.allowed) {
-                throw IllegalStateException(canConnectDecision.reason ?: "connect_not_allowed")
-            }
-            if (currentSessionDeviceAddress != null) {
-                val reconnectDecision = BluetoothSessionPolicy.canReconnectSameSession(
-                    currentSessionDeviceAddress = currentSessionDeviceAddress,
-                    targetDevice = BluetoothDeviceSnapshot(
-                        address = device.address,
-                        isBonded = isBonded(device),
-                    ),
+            if (!reconnectDecision.allowed) {
+                return Result.failure(
+                    IllegalStateException(reconnectDecision.reason ?: "same_session_reconnect_not_allowed"),
                 )
-                if (!reconnectDecision.allowed) {
-                    throw IllegalStateException(reconnectDecision.reason ?: "same_session_reconnect_not_allowed")
+            }
+        }
+        ensureDiscoveryStoppedBeforeConnect()
+        disconnect()
+        val newSocket = device.createRfcommSocketToServiceRecord(SPP_UUID)
+        return suspendCancellableCoroutine { continuation ->
+            val executor = Executors.newSingleThreadExecutor()
+            val future = executor.submit {
+                try {
+                    newSocket.connect()
+                    val newInputStream = newSocket.inputStream
+                    socket = newSocket
+                    inputStream = newInputStream
+                    if (continuation.isActive) {
+                        continuation.resume(Result.success(Unit))
+                    }
+                } catch (throwable: Throwable) {
+                    socket = null
+                    inputStream = null
+                    runCatching { newSocket.close() }
+                    if (continuation.isActive) {
+                        if (throwable is TimeoutException) {
+                            continuation.resume(Result.failure(IllegalStateException("bluetooth_connect_timeout")))
+                        } else {
+                            continuation.resume(Result.failure(throwable))
+                        }
+                    }
+                } finally {
+                    executor.shutdownNow()
                 }
             }
-            ensureDiscoveryStoppedBeforeConnect()
-            disconnect()
-            val newSocket = device.createRfcommSocketToServiceRecord(SPP_UUID)
-            val executor = Executors.newSingleThreadExecutor()
-            try {
-                val future = executor.submit<Unit> {
-                    newSocket.connect()
+            executor.submit {
+                try {
+                    future.get(timeoutMillis, TimeUnit.MILLISECONDS)
+                } catch (_: TimeoutException) {
+                    future.cancel(true)
+                    socket = null
+                    inputStream = null
+                    runCatching { newSocket.close() }
+                    if (continuation.isActive) {
+                        continuation.resume(Result.failure(IllegalStateException("bluetooth_connect_timeout")))
+                    }
+                } catch (_: CancellationException) {
+                    // no-op, cancellation is handled in invokeOnCancellation
+                } catch (_: Throwable) {
+                    // worker thread reports the actual result
                 }
-                future.get(timeoutMillis, TimeUnit.MILLISECONDS)
-                val newInputStream = newSocket.inputStream
-                socket = newSocket
-                inputStream = newInputStream
-            } catch (_: TimeoutException) {
+            }
+            continuation.invokeOnCancellation {
+                future.cancel(true)
                 socket = null
                 inputStream = null
                 runCatching { newSocket.close() }
-                throw IllegalStateException("bluetooth_connect_timeout")
-            } catch (throwable: Throwable) {
-                socket = null
-                inputStream = null
-                runCatching { newSocket.close() }
-                throw throwable
-            } finally {
-                executor.shutdownNow()
             }
         }
     }

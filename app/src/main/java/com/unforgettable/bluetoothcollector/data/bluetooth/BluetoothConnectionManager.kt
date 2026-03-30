@@ -90,6 +90,15 @@ class BluetoothConnectionManager(
 
     fun isConnected(): Boolean = socket?.isConnected == true
 
+    fun handleAdapterStateChanged(state: Int): Boolean {
+        return if (state == BluetoothAdapter.STATE_TURNING_OFF || state == BluetoothAdapter.STATE_OFF) {
+            disconnect()
+            true
+        } else {
+            false
+        }
+    }
+
     fun disconnect() {
         runCatching { inputStream?.close() }
         runCatching { socket?.close() }

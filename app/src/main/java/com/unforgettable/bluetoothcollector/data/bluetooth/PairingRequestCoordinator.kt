@@ -55,4 +55,15 @@ class PairingRequestCoordinator(
         }
         return runCatching { device.createBond() }.getOrDefault(false)
     }
+
+    fun requestBondByAddress(
+        targetDeviceAddress: String,
+        currentSessionDeviceAddress: String? = null,
+    ): Boolean {
+        val targetDevice = bondedDeviceManager.resolveDevice(targetDeviceAddress) ?: return false
+        return requestBond(
+            device = targetDevice,
+            currentSessionDeviceAddress = currentSessionDeviceAddress,
+        )
+    }
 }

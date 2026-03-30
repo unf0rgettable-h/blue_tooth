@@ -2,6 +2,7 @@ package com.unforgettable.bluetoothcollector.data.bluetooth
 
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothDevice
 import com.unforgettable.bluetoothcollector.domain.model.BondedBluetoothDeviceItem
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -39,6 +40,11 @@ class BondedDeviceManager(
     fun findSavedTarget(address: String?): BondedBluetoothDeviceItem? {
         if (address.isNullOrBlank()) return null
         return bondedDevices.value.firstOrNull { it.address == address } ?: refreshBondedDevices().firstOrNull { it.address == address }
+    }
+
+    fun resolveDevice(address: String?): BluetoothDevice? {
+        if (address.isNullOrBlank()) return null
+        return runCatching { bluetoothAdapter?.getRemoteDevice(address) }.getOrNull()
     }
 
     @SuppressLint("MissingPermission")

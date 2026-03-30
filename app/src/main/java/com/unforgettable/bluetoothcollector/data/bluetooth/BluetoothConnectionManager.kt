@@ -14,6 +14,7 @@ import java.util.concurrent.TimeoutException
 
 class BluetoothConnectionManager(
     private val bluetoothAdapter: BluetoothAdapter?,
+    private val permissionChecker: BluetoothPermissionChecker,
 ) {
     private var socket: BluetoothSocket? = null
     private var inputStream: InputStream? = null
@@ -26,6 +27,10 @@ class BluetoothConnectionManager(
         runCatching {
             bluetoothAdapter?.cancelDiscovery()
             disconnect()
+            val permissionDecision = BluetoothSessionPolicy.bondedConnectAvailability(permissionChecker.currentState())
+            if (!permissionDecision.allowed) {
+                throw IllegalStateException(permissionDecision.reason ?: "connect_permission_denied")
+            }
             val canConnectDecision = BluetoothSessionPolicy.canConnect(
                 BluetoothDeviceSnapshot(
                     address = device.address,

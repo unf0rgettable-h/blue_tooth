@@ -22,6 +22,7 @@ class BluetoothConnectionManager(
     @SuppressLint("MissingPermission")
     suspend fun connect(
         device: BluetoothDevice,
+        currentSessionDeviceAddress: String? = null,
         timeoutMillis: Long = DEFAULT_CONNECT_TIMEOUT_MS,
     ): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
@@ -39,6 +40,18 @@ class BluetoothConnectionManager(
             )
             if (!canConnectDecision.allowed) {
                 throw IllegalStateException(canConnectDecision.reason ?: "connect_not_allowed")
+            }
+            if (currentSessionDeviceAddress != null) {
+                val reconnectDecision = BluetoothSessionPolicy.canReconnectSameSession(
+                    currentSessionDeviceAddress = currentSessionDeviceAddress,
+                    targetDevice = BluetoothDeviceSnapshot(
+                        address = device.address,
+                        isBonded = isBonded(device),
+                    ),
+                )
+                if (!reconnectDecision.allowed) {
+                    throw IllegalStateException(reconnectDecision.reason ?: "same_session_reconnect_not_allowed")
+                }
             }
             val newSocket = device.createRfcommSocketToServiceRecord(SPP_UUID)
             val executor = Executors.newSingleThreadExecutor()

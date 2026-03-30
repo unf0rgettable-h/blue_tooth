@@ -53,6 +53,11 @@ class PairingRequestCoordinator(
         if (currentSessionDeviceAddress != null && !rePairDecision.allowed) {
             return false
         }
+        if (currentSessionDeviceAddress != null && device.bondState == BluetoothDevice.BOND_BONDED) {
+            bondedDeviceManager.refreshBondedDevices()
+            mutableBondedAddresses.tryEmit(device.address)
+            return true
+        }
         return runCatching { device.createBond() }.getOrDefault(false)
     }
 

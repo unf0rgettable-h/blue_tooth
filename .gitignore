@@ -5,3 +5,5 @@ blue_tooth.apk
 .gradle/
 .tools/
 **/build/
+local.properties
+.idea/

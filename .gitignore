@@ -2,3 +2,6 @@
 PROJECT.md
 blue_tooth.apk
 .worktrees/
+.gradle/
+.tools/
+**/build/

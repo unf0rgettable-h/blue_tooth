@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">原生Android全站仪蓝牙采集</string>
+    <string name="bootstrap_placeholder">CollectorRoute placeholder</string>
+</resources>

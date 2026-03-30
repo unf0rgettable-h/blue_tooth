@@ -17,15 +17,15 @@ class InstrumentCatalogTest {
 
         InstrumentCatalog.models.forEach { model ->
             assertTrue(
-                "Unknown brandId '${model.brandId}' for model '${model.id}'",
+                "Unknown brandId '${model.brandId}' for model '${model.modelId}'",
                 model.brandId in knownBrandIds,
             )
             assertNotNull(
-                "Missing delimiter strategy for model '${model.id}'",
+                "Missing delimiter strategy for model '${model.modelId}'",
                 model.delimiterStrategy,
             )
             assertEquals(
-                "Unexpected transport for model '${model.id}'",
+                "Unexpected transport for model '${model.modelId}'",
                 InstrumentCatalog.CLASSIC_BLUETOOTH_SPP,
                 model.expectedTransport,
             )

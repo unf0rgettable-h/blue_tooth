@@ -29,10 +29,7 @@ class BluetoothConnectionManager(
             if (!permissionDecision.allowed) {
                 throw IllegalStateException(permissionDecision.reason ?: "connect_permission_denied")
             }
-            val permissionState = permissionChecker.currentState()
-            if (permissionState.canDiscover) {
-                runCatching { bluetoothAdapter?.cancelDiscovery() }
-            }
+            runCatching { bluetoothAdapter?.cancelDiscovery() }
             disconnect()
             val canConnectDecision = BluetoothSessionPolicy.canConnect(
                 BluetoothDeviceSnapshot(

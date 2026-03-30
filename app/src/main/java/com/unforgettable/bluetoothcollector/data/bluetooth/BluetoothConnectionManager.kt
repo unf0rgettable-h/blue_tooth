@@ -4,7 +4,6 @@ import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothSocket
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -12,7 +11,7 @@ import java.io.InputStream
 import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.TimeoutException
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
 
 class BluetoothConnectionManager(
@@ -55,53 +54,46 @@ class BluetoothConnectionManager(
         disconnect()
         val newSocket = device.createRfcommSocketToServiceRecord(SPP_UUID)
         return suspendCancellableCoroutine { continuation ->
-            val executor = Executors.newSingleThreadExecutor()
-            val future = executor.submit {
+            val completed = AtomicBoolean(false)
+            val timeoutExecutor = Executors.newSingleThreadScheduledExecutor()
+            val connectThread = Thread {
                 try {
                     newSocket.connect()
                     val newInputStream = newSocket.inputStream
                     socket = newSocket
                     inputStream = newInputStream
-                    if (continuation.isActive) {
+                    if (completed.compareAndSet(false, true) && continuation.isActive) {
                         continuation.resume(Result.success(Unit))
                     }
                 } catch (throwable: Throwable) {
                     socket = null
                     inputStream = null
                     runCatching { newSocket.close() }
-                    if (continuation.isActive) {
-                        if (throwable is TimeoutException) {
-                            continuation.resume(Result.failure(IllegalStateException("bluetooth_connect_timeout")))
-                        } else {
-                            continuation.resume(Result.failure(throwable))
-                        }
+                    if (completed.compareAndSet(false, true) && continuation.isActive) {
+                        continuation.resume(Result.failure(throwable))
                     }
                 } finally {
-                    executor.shutdownNow()
+                    timeoutExecutor.shutdownNow()
                 }
             }
-            executor.submit {
-                try {
-                    future.get(timeoutMillis, TimeUnit.MILLISECONDS)
-                } catch (_: TimeoutException) {
-                    future.cancel(true)
+            connectThread.start()
+            timeoutExecutor.schedule({
+                if (completed.compareAndSet(false, true)) {
                     socket = null
                     inputStream = null
                     runCatching { newSocket.close() }
                     if (continuation.isActive) {
                         continuation.resume(Result.failure(IllegalStateException("bluetooth_connect_timeout")))
                     }
-                } catch (_: CancellationException) {
-                    // no-op, cancellation is handled in invokeOnCancellation
-                } catch (_: Throwable) {
-                    // worker thread reports the actual result
                 }
-            }
+            }, timeoutMillis, TimeUnit.MILLISECONDS)
             continuation.invokeOnCancellation {
-                future.cancel(true)
-                socket = null
-                inputStream = null
-                runCatching { newSocket.close() }
+                if (completed.compareAndSet(false, true)) {
+                    socket = null
+                    inputStream = null
+                    runCatching { newSocket.close() }
+                }
+                timeoutExecutor.shutdownNow()
             }
         }
     }

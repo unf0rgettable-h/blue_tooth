@@ -27,32 +27,34 @@ class BluetoothConnectionManager(
         currentSessionDeviceAddress: String? = null,
         timeoutMillis: Long = DEFAULT_CONNECT_TIMEOUT_MS,
     ): Result<Unit> {
-        val permissionDecision = BluetoothSessionPolicy.bondedConnectAvailability(permissionChecker.currentState())
-        if (!permissionDecision.allowed) {
-            return Result.failure(IllegalStateException(permissionDecision.reason ?: "connect_permission_denied"))
-        }
-        val deviceSnapshot = BluetoothDeviceSnapshot(
-            address = device.address,
-            isBonded = isBonded(device),
-        )
-        val canConnectDecision = BluetoothSessionPolicy.canConnect(deviceSnapshot)
-        if (!canConnectDecision.allowed) {
-            return Result.failure(IllegalStateException(canConnectDecision.reason ?: "connect_not_allowed"))
-        }
-        if (currentSessionDeviceAddress != null) {
-            val reconnectDecision = BluetoothSessionPolicy.canReconnectSameSession(
-                currentSessionDeviceAddress = currentSessionDeviceAddress,
-                targetDevice = deviceSnapshot,
-            )
-            if (!reconnectDecision.allowed) {
-                return Result.failure(
-                    IllegalStateException(reconnectDecision.reason ?: "same_session_reconnect_not_allowed"),
-                )
+        val newSocket = runCatching {
+            val permissionDecision = BluetoothSessionPolicy.bondedConnectAvailability(permissionChecker.currentState())
+            if (!permissionDecision.allowed) {
+                throw IllegalStateException(permissionDecision.reason ?: "connect_permission_denied")
             }
+            val deviceSnapshot = BluetoothDeviceSnapshot(
+                address = device.address,
+                isBonded = isBonded(device),
+            )
+            val canConnectDecision = BluetoothSessionPolicy.canConnect(deviceSnapshot)
+            if (!canConnectDecision.allowed) {
+                throw IllegalStateException(canConnectDecision.reason ?: "connect_not_allowed")
+            }
+            if (currentSessionDeviceAddress != null) {
+                val reconnectDecision = BluetoothSessionPolicy.canReconnectSameSession(
+                    currentSessionDeviceAddress = currentSessionDeviceAddress,
+                    targetDevice = deviceSnapshot,
+                )
+                if (!reconnectDecision.allowed) {
+                    throw IllegalStateException(reconnectDecision.reason ?: "same_session_reconnect_not_allowed")
+                }
+            }
+            ensureDiscoveryStoppedBeforeConnect()
+            disconnect()
+            device.createRfcommSocketToServiceRecord(SPP_UUID)
+        }.getOrElse { throwable ->
+            return Result.failure(throwable)
         }
-        ensureDiscoveryStoppedBeforeConnect()
-        disconnect()
-        val newSocket = device.createRfcommSocketToServiceRecord(SPP_UUID)
         return suspendCancellableCoroutine { continuation ->
             val completed = AtomicBoolean(false)
             val timeoutExecutor = Executors.newSingleThreadScheduledExecutor()

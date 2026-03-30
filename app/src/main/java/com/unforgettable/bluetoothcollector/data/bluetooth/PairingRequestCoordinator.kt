@@ -6,17 +6,17 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.receiveAsFlow
 
 class PairingRequestCoordinator(
     private val context: Context,
     private val bondedDeviceManager: BondedDeviceManager,
     private val permissionChecker: BluetoothPermissionChecker,
 ) {
-    private val mutableBondedAddresses = MutableSharedFlow<String>(replay = 1, extraBufferCapacity = 1)
-    val bondedAddresses: SharedFlow<String> = mutableBondedAddresses.asSharedFlow()
+    private val bondedAddressChannel = Channel<String>(capacity = Channel.BUFFERED)
+    val bondedAddresses: Flow<String> = bondedAddressChannel.receiveAsFlow()
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -25,7 +25,7 @@ class PairingRequestCoordinator(
                 val bondState = intent.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, BluetoothDevice.ERROR)
                 if (device != null && bondState == BluetoothDevice.BOND_BONDED) {
                     bondedDeviceManager.refreshBondedDevices()
-                    mutableBondedAddresses.tryEmit(device.address)
+                    bondedAddressChannel.trySend(device.address)
                 }
             }
         }
@@ -56,7 +56,7 @@ class PairingRequestCoordinator(
         }
         if (currentSessionDeviceAddress != null && device.bondState == BluetoothDevice.BOND_BONDED) {
             bondedDeviceManager.refreshBondedDevices()
-            mutableBondedAddresses.tryEmit(device.address)
+            bondedAddressChannel.trySend(device.address)
             return true
         }
         return runCatching { device.createBond() }.getOrDefault(false)

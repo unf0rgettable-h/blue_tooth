@@ -6,9 +6,11 @@ import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothSocket
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
 import java.io.InputStream
 import java.util.UUID
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 
 class BluetoothConnectionManager(
     private val bluetoothAdapter: BluetoothAdapter?,
@@ -25,15 +27,22 @@ class BluetoothConnectionManager(
             bluetoothAdapter?.cancelDiscovery()
             disconnect()
             val newSocket = device.createRfcommSocketToServiceRecord(SPP_UUID)
+            val executor = Executors.newSingleThreadExecutor()
             try {
-                withTimeout(timeoutMillis) {
+                val future = executor.submit<Unit> {
                     newSocket.connect()
                 }
+                future.get(timeoutMillis, TimeUnit.MILLISECONDS)
                 socket = newSocket
                 inputStream = newSocket.inputStream
+            } catch (_: TimeoutException) {
+                runCatching { newSocket.close() }
+                throw IllegalStateException("bluetooth_connect_timeout")
             } catch (throwable: Throwable) {
                 runCatching { newSocket.close() }
                 throw throwable
+            } finally {
+                executor.shutdownNow()
             }
         }
     }

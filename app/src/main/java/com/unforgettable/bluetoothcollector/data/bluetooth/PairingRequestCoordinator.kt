@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.SharedFlow
 class PairingRequestCoordinator(
     private val context: Context,
     private val bondedDeviceManager: BondedDeviceManager,
+    private val permissionChecker: BluetoothPermissionChecker,
 ) {
     private val mutableBondedAddresses = MutableSharedFlow<String>(extraBufferCapacity = 1)
     val bondedAddresses: SharedFlow<String> = mutableBondedAddresses
@@ -42,6 +43,9 @@ class PairingRequestCoordinator(
         device: BluetoothDevice,
         currentSessionDeviceAddress: String? = null,
     ): Boolean {
+        if (!BluetoothSessionPolicy.bondedConnectAvailability(permissionChecker.currentState()).allowed) {
+            return false
+        }
         val rePairDecision = BluetoothSessionPolicy.canRePairSelectedDevice(
             currentSessionDeviceAddress = currentSessionDeviceAddress,
             targetDeviceAddress = device.address,

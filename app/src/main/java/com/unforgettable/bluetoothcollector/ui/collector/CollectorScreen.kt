@@ -1,0 +1,665 @@
+package com.unforgettable.bluetoothcollector.ui.collector
+
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import com.unforgettable.bluetoothcollector.data.bluetooth.BluetoothConnectionState
+import com.unforgettable.bluetoothcollector.domain.model.BondedBluetoothDeviceItem
+import com.unforgettable.bluetoothcollector.domain.model.DiscoveredBluetoothDeviceItem
+import com.unforgettable.bluetoothcollector.domain.model.ExportFormat
+import com.unforgettable.bluetoothcollector.domain.model.InstrumentBrand
+import com.unforgettable.bluetoothcollector.domain.model.InstrumentModel
+import com.unforgettable.bluetoothcollector.domain.model.MeasurementRecord
+
+object CollectorScreenTags {
+    const val NearbySection = "nearby_section"
+    const val PairedSection = "paired_section"
+    const val PreviewSection = "preview_section"
+    const val ExportDialog = "export_dialog"
+    const val ExportCsv = "export_csv"
+    const val ExportTxt = "export_txt"
+}
+
+@Composable
+fun CollectorScreen(
+    uiState: CollectorUiState,
+    onInstrumentBrandSelected: (String) -> Unit,
+    onInstrumentModelSelected: (String) -> Unit,
+    onTargetDeviceSelected: (String) -> Unit,
+    onDiscoveryRequested: () -> Unit,
+    onStopDiscoveryRequested: () -> Unit,
+    onPairDeviceRequested: (String) -> Unit,
+    onConnectRequested: () -> Unit,
+    onDisconnectRequested: () -> Unit,
+    onStartReceivingRequested: () -> Unit,
+    onStopReceivingRequested: () -> Unit,
+    onClearRequested: () -> Unit,
+    onExportRequested: () -> Unit,
+    onExportFormatSelected: (ExportFormat) -> Unit,
+    onDismissExportDialog: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            HeaderBlock(uiState = uiState)
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                val stacked = maxWidth < 760.dp
+                if (stacked) {
+                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        InstrumentPanel(
+                            brands = uiState.availableBrands,
+                            models = uiState.filteredModels(),
+                            selectedBrandId = uiState.selectedBrandId,
+                            selectedModelId = uiState.selectedModelId,
+                            onBrandSelected = onInstrumentBrandSelected,
+                            onModelSelected = onInstrumentModelSelected,
+                        )
+                        BluetoothPanel(
+                            uiState = uiState,
+                            onTargetDeviceSelected = onTargetDeviceSelected,
+                            onPairDeviceRequested = onPairDeviceRequested,
+                        )
+                    }
+                } else {
+                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        InstrumentPanel(
+                            modifier = Modifier.weight(1f),
+                            brands = uiState.availableBrands,
+                            models = uiState.filteredModels(),
+                            selectedBrandId = uiState.selectedBrandId,
+                            selectedModelId = uiState.selectedModelId,
+                            onBrandSelected = onInstrumentBrandSelected,
+                            onModelSelected = onInstrumentModelSelected,
+                        )
+                        BluetoothPanel(
+                            modifier = Modifier.weight(1.15f),
+                            uiState = uiState,
+                            onTargetDeviceSelected = onTargetDeviceSelected,
+                            onPairDeviceRequested = onPairDeviceRequested,
+                        )
+                    }
+                }
+            }
+            ActionPanel(
+                uiState = uiState,
+                onDiscoveryRequested = onDiscoveryRequested,
+                onStopDiscoveryRequested = onStopDiscoveryRequested,
+                onConnectRequested = onConnectRequested,
+                onDisconnectRequested = onDisconnectRequested,
+                onStartReceivingRequested = onStartReceivingRequested,
+                onStopReceivingRequested = onStopReceivingRequested,
+                onClearRequested = onClearRequested,
+                onExportRequested = onExportRequested,
+            )
+            PreviewPanel(records = uiState.previewRecords)
+        }
+        if (uiState.isExportDialogVisible) {
+            Box(modifier = Modifier.testTag(CollectorScreenTags.ExportDialog)) {
+                ExportFormatDialog(
+                    onSelect = onExportFormatSelected,
+                    onDismiss = onDismissExportDialog,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun HeaderBlock(uiState: CollectorUiState) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface,
+        ),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.24f)),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = "全站仪蓝牙采集",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = "现场即连即传即看。只保留仪器选择、蓝牙连接、实时预览、导出与分享。",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                StatusChip(
+                    label = "连接 ${uiState.connectionState.toDisplayText()}",
+                )
+                StatusChip(
+                    label = if (uiState.isReceiving) "接收中" else "未接收",
+                )
+                StatusChip(
+                    label = "已接收 ${uiState.receivedCount} 条",
+                )
+            }
+            if (!uiState.permissionState.bluetoothEnabled || !uiState.permissionState.canDiscover || !uiState.permissionState.canConnect) {
+                Text(
+                    text = buildPermissionSummary(uiState),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.tertiary,
+                )
+            }
+            uiState.statusMessage?.let { message ->
+                Text(
+                    text = "状态提示：$message",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun InstrumentPanel(
+    brands: List<InstrumentBrand>,
+    models: List<InstrumentModel>,
+    selectedBrandId: String?,
+    selectedModelId: String?,
+    onBrandSelected: (String) -> Unit,
+    onModelSelected: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    PanelCard(
+        modifier = modifier,
+        title = "仪器选择",
+        subtitle = "左侧先定品牌与型号，后续收数使用型号的默认分隔策略。",
+    ) {
+        DropdownSelector(
+            label = "仪器品牌",
+            options = brands,
+            selectedId = selectedBrandId,
+            displayName = { it.displayName },
+            optionId = { it.id },
+            onSelect = onBrandSelected,
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        DropdownSelector(
+            label = "仪器型号",
+            options = models,
+            selectedId = selectedModelId,
+            displayName = { it.displayName },
+            optionId = { it.modelId },
+            onSelect = onModelSelected,
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(
+            text = if (selectedModelId == null) {
+                "尚未选择型号。"
+            } else {
+                "当前型号：$selectedModelId"
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun BluetoothPanel(
+    uiState: CollectorUiState,
+    onTargetDeviceSelected: (String) -> Unit,
+    onPairDeviceRequested: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    PanelCard(
+        modifier = modifier,
+        title = "蓝牙设备",
+        subtitle = "右侧分成附近设备与已配对设备。附近设备可先配对，已配对设备可作为连接目标。",
+    ) {
+        DeviceSection(
+            modifier = Modifier.testTag(CollectorScreenTags.NearbySection),
+            title = "附近设备",
+            devices = uiState.nearbyDevices,
+            selectedAddress = uiState.selectedTargetDeviceAddress,
+            pairedAddresses = uiState.pairedDevices.map(BondedBluetoothDeviceItem::address).toSet(),
+            onSelect = onTargetDeviceSelected,
+            onAction = onPairDeviceRequested,
+            actionLabel = { paired -> if (paired) "已配对" else "配对" },
+            actionEnabled = { paired -> !paired && uiState.permissionState.canConnect },
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        DeviceSection(
+            modifier = Modifier.testTag(CollectorScreenTags.PairedSection),
+            title = "已配对设备",
+            devices = uiState.pairedDevices,
+            selectedAddress = uiState.selectedTargetDeviceAddress,
+            pairedAddresses = uiState.pairedDevices.map(BondedBluetoothDeviceItem::address).toSet(),
+            onSelect = onTargetDeviceSelected,
+            onAction = onTargetDeviceSelected,
+            actionLabel = { "选中" },
+            actionEnabled = { true },
+        )
+    }
+}
+
+@Composable
+private fun ActionPanel(
+    uiState: CollectorUiState,
+    onDiscoveryRequested: () -> Unit,
+    onStopDiscoveryRequested: () -> Unit,
+    onConnectRequested: () -> Unit,
+    onDisconnectRequested: () -> Unit,
+    onStartReceivingRequested: () -> Unit,
+    onStopReceivingRequested: () -> Unit,
+    onClearRequested: () -> Unit,
+    onExportRequested: () -> Unit,
+) {
+    PanelCard(
+        title = "连接与接收控制",
+        subtitle = "只保留搜索、连接、开始/停止接收、清空与导出。",
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilledTonalButton(
+                onClick = onDiscoveryRequested,
+                enabled = uiState.permissionState.canDiscover &&
+                    uiState.permissionState.bluetoothEnabled &&
+                    uiState.connectionState == BluetoothConnectionState.DISCONNECTED &&
+                    !uiState.isDiscovering,
+            ) {
+                Text(text = "搜索蓝牙")
+            }
+            OutlinedButton(
+                onClick = onStopDiscoveryRequested,
+                enabled = uiState.isDiscovering,
+            ) {
+                Text(text = "停止搜索")
+            }
+            FilledTonalButton(
+                onClick = onConnectRequested,
+                enabled = uiState.permissionState.canConnect &&
+                    uiState.permissionState.bluetoothEnabled &&
+                    uiState.selectedTargetDeviceAddress != null &&
+                    uiState.connectionState == BluetoothConnectionState.DISCONNECTED,
+            ) {
+                Text(text = "连接")
+            }
+            OutlinedButton(
+                onClick = onDisconnectRequested,
+                enabled = uiState.connectionState != BluetoothConnectionState.DISCONNECTED,
+            ) {
+                Text(text = "断开")
+            }
+        }
+        Spacer(modifier = Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilledTonalButton(
+                onClick = onStartReceivingRequested,
+                enabled = uiState.connectionState == BluetoothConnectionState.CONNECTED && !uiState.isReceiving,
+            ) {
+                Text(text = "开始接收")
+            }
+            OutlinedButton(
+                onClick = onStopReceivingRequested,
+                enabled = uiState.isReceiving,
+            ) {
+                Text(text = "停止接收")
+            }
+            OutlinedButton(
+                onClick = onClearRequested,
+                enabled = uiState.connectionState == BluetoothConnectionState.DISCONNECTED,
+            ) {
+                Text(text = "清空数据")
+            }
+            FilledTonalButton(
+                onClick = onExportRequested,
+                enabled = uiState.currentSession != null && uiState.previewRecords.isNotEmpty(),
+            ) {
+                Text(text = "导出并分享")
+            }
+        }
+    }
+}
+
+@Composable
+private fun PreviewPanel(records: List<MeasurementRecord>) {
+    PanelCard(
+        modifier = Modifier.testTag(CollectorScreenTags.PreviewSection),
+        title = "实时/离线预览",
+        subtitle = "按接收顺序展示原始测量文本和轻量解析结果。",
+    ) {
+        if (records.isEmpty()) {
+            EmptyPlaceholder(text = "当前没有接收到测量记录。")
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 180.dp, max = 320.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                items(records, key = MeasurementRecord::id) { record ->
+                    PreviewRow(record = record)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PanelCard(
+    title: String,
+    subtitle: String,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+        shape = RoundedCornerShape(22.dp),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            content()
+        }
+    }
+}
+
+@Composable
+private fun <T> DropdownSelector(
+    label: String,
+    options: List<T>,
+    selectedId: String?,
+    displayName: (T) -> String,
+    optionId: (T) -> String,
+    onSelect: (String) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val selectedLabel = options.firstOrNull { optionId(it) == selectedId }?.let(displayName) ?: "请选择"
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+        )
+        OutlinedButton(
+            modifier = Modifier.fillMaxWidth(),
+            onClick = { expanded = true },
+        ) {
+            Text(
+                text = selectedLabel,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier
+                .widthIn(min = 240.dp, max = 320.dp)
+                .background(MaterialTheme.colorScheme.surface),
+        ) {
+            options.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(text = displayName(option)) },
+                    onClick = {
+                        expanded = false
+                        onSelect(optionId(option))
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun <T> DeviceSection(
+    title: String,
+    devices: List<T>,
+    selectedAddress: String?,
+    pairedAddresses: Set<String>,
+    onSelect: (String) -> Unit,
+    onAction: (String) -> Unit,
+    actionLabel: (Boolean) -> String,
+    actionEnabled: (Boolean) -> Boolean,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        if (devices.isEmpty()) {
+            EmptyPlaceholder(text = "暂无设备")
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                devices.forEach { item ->
+                    val name = when (item) {
+                        is DiscoveredBluetoothDeviceItem -> item.name
+                        is BondedBluetoothDeviceItem -> item.name
+                        else -> null
+                    }.orEmpty().ifBlank { "未命名设备" }
+                    val address = when (item) {
+                        is DiscoveredBluetoothDeviceItem -> item.address
+                        is BondedBluetoothDeviceItem -> item.address
+                        else -> ""
+                    }
+                    val paired = pairedAddresses.contains(address)
+                    val selected = selectedAddress == address
+                    DeviceRow(
+                        name = name,
+                        address = address,
+                        selected = selected,
+                        actionLabel = actionLabel(paired),
+                        actionEnabled = actionEnabled(paired),
+                        onSelect = { onSelect(address) },
+                        onAction = { onAction(address) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DeviceRow(
+    name: String,
+    address: String,
+    selected: Boolean,
+    actionLabel: String,
+    actionEnabled: Boolean,
+    onSelect: () -> Unit,
+    onAction: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(onClick = onSelect),
+        color = if (selected) {
+            MaterialTheme.colorScheme.primaryContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+        },
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                )
+                Text(
+                    text = address,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            FilledTonalButton(
+                onClick = onAction,
+                enabled = actionEnabled,
+            ) {
+                Text(text = actionLabel)
+            }
+        }
+    }
+}
+
+@Composable
+private fun PreviewRow(record: MeasurementRecord) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.32f),
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "#${record.sequence}",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = record.receivedAt,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = record.rawPayload,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+            )
+            if (record.parsedCode != null || record.parsedValue != null) {
+                Spacer(modifier = Modifier.height(6.dp))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.16f))
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "解析：${record.parsedCode.orEmpty()} ${record.parsedValue.orEmpty()}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmptyPlaceholder(text: String) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.24f),
+    ) {
+        Text(
+            modifier = Modifier.padding(12.dp),
+            text = text,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun StatusChip(label: String) {
+    AssistChip(
+        onClick = {},
+        enabled = false,
+        label = { Text(text = label) },
+        leadingIcon = {
+            Spacer(
+                modifier = Modifier
+                    .size(8.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(MaterialTheme.colorScheme.primary),
+            )
+        },
+    )
+}
+
+private fun BluetoothConnectionState.toDisplayText(): String {
+    return when (this) {
+        BluetoothConnectionState.DISCONNECTED -> "未连接"
+        BluetoothConnectionState.CONNECTING -> "连接中"
+        BluetoothConnectionState.CONNECTED -> "已连接"
+    }
+}
+
+private fun buildPermissionSummary(uiState: CollectorUiState): String {
+    val parts = buildList {
+        if (!uiState.permissionState.bluetoothEnabled) add("蓝牙未开启")
+        if (!uiState.permissionState.canDiscover) add("缺少搜索权限")
+        if (!uiState.permissionState.canConnect) add("缺少连接权限")
+    }
+    return parts.joinToString(separator = " / ")
+}

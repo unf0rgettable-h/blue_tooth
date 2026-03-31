@@ -276,6 +276,10 @@ private class FakeMeasurementRecordDao : MeasurementRecordDao {
         records += record
     }
 
+    override suspend fun getBySessionIdOrdered(sessionId: String): List<MeasurementRecordEntity> {
+        return records.filter { it.sessionId == sessionId }.sortedBy { it.sequence }
+    }
+
     override suspend fun deleteBySessionId(sessionId: String) {
         records.removeAll { it.sessionId == sessionId }
     }

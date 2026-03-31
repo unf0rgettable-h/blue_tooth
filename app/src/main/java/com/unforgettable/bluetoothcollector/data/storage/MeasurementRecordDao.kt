@@ -10,6 +10,9 @@ interface MeasurementRecordDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(record: MeasurementRecordEntity)
 
+    @Query("SELECT * FROM measurement_records WHERE sessionId = :sessionId ORDER BY sequence ASC")
+    suspend fun getBySessionIdOrdered(sessionId: String): List<MeasurementRecordEntity>
+
     @Query("DELETE FROM measurement_records WHERE sessionId = :sessionId")
     suspend fun deleteBySessionId(sessionId: String)
 }

@@ -449,6 +449,10 @@ private class FakeCollectorBluetoothController(
 
     override suspend fun drainIncomingBytes(maxBytes: Int): ByteArray = ByteArray(0)
 
+    override suspend fun blockingReadBytes(): ByteArray = ByteArray(0)
+
+    override suspend fun blockingReadBytesWithTimeout(timeoutMs: Long): ByteArray? = null
+
     override fun shutdown() = Unit
 }
 

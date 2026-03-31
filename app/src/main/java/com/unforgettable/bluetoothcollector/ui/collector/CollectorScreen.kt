@@ -75,6 +75,7 @@ fun CollectorScreen(
     onDisconnectRequested: () -> Unit,
     onStartReceivingRequested: () -> Unit,
     onStopReceivingRequested: () -> Unit,
+    onStartImportRequested: () -> Unit,
     onClearRequested: () -> Unit,
     onExportRequested: () -> Unit,
     onExportFormatSelected: (ExportFormat) -> Unit,
@@ -143,6 +144,7 @@ fun CollectorScreen(
                 onDisconnectRequested = onDisconnectRequested,
                 onStartReceivingRequested = onStartReceivingRequested,
                 onStopReceivingRequested = onStopReceivingRequested,
+                onStartImportRequested = onStartImportRequested,
                 onClearRequested = onClearRequested,
                 onExportRequested = onExportRequested,
             )
@@ -188,7 +190,11 @@ private fun HeaderBlock(uiState: CollectorUiState) {
                     label = "连接 ${uiState.connectionState.toDisplayText()}",
                 )
                 StatusChip(
-                    label = if (uiState.isReceiving) "接收中" else "未接收",
+                    label = when {
+                        uiState.isImporting -> "导入中..."
+                        uiState.isReceiving -> "接收中"
+                        else -> "未接收"
+                    },
                 )
                 StatusChip(
                     label = "已接收 ${uiState.receivedCount} 条",
@@ -316,6 +322,7 @@ private fun ActionPanel(
     onDisconnectRequested: () -> Unit,
     onStartReceivingRequested: () -> Unit,
     onStopReceivingRequested: () -> Unit,
+    onStartImportRequested: () -> Unit,
     onClearRequested: () -> Unit,
     onExportRequested: () -> Unit,
 ) {
@@ -363,11 +370,17 @@ private fun ActionPanel(
             ) {
                 Text(text = "开始接收")
             }
+            FilledTonalButton(
+                onClick = onStartImportRequested,
+                enabled = uiState.connectionState == BluetoothConnectionState.CONNECTED && !uiState.isReceiving,
+            ) {
+                Text(text = "导入存储数据")
+            }
             OutlinedButton(
                 onClick = onStopReceivingRequested,
                 enabled = uiState.isReceiving,
             ) {
-                Text(text = "停止接收")
+                Text(text = if (uiState.isImporting) "中止导入" else "停止接收")
             }
             OutlinedButton(
                 onClick = onClearRequested,

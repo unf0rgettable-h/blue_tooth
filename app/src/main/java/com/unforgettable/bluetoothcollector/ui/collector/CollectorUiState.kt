@@ -27,6 +27,7 @@ data class CollectorUiState(
     val connectionState: BluetoothConnectionState = BluetoothConnectionState.DISCONNECTED,
     val isDiscovering: Boolean = false,
     val isReceiving: Boolean = false,
+    val isImporting: Boolean = false,
     val currentSession: Session? = null,
     val previewRecords: List<MeasurementRecord> = emptyList(),
     val receivedCount: Int = 0,

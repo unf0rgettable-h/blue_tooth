@@ -1,6 +1,7 @@
 package com.unforgettable.bluetoothcollector.ui.collector
 
 import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothDevice
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -149,6 +150,7 @@ fun CollectorRoute() {
         onDisconnectRequested = viewModel::onDisconnectRequested,
         onStartReceivingRequested = viewModel::onStartReceivingRequested,
         onStopReceivingRequested = viewModel::onStopReceivingRequested,
+        onStartImportRequested = viewModel::onStartImportRequested,
         onClearRequested = viewModel::onClearRequested,
         onExportRequested = viewModel::onExportRequested,
         onExportFormatSelected = viewModel::onExportFormatSelected,
@@ -192,13 +194,19 @@ private class AndroidCollectorBluetoothController(
     private var registrationCount: Int = 0
     private val adapterStateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            if (intent.action != BluetoothAdapter.ACTION_STATE_CHANGED) return
-            val state = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR)
-            val adapterWasHandled = connectionManager.handleAdapterStateChanged(state)
-            discoveryManager.handleAdapterStateChanged(state)
-            refreshPermissionState()
-            if (adapterWasHandled) {
-                mutableControllerEvents.tryEmit(CollectorBluetoothControllerEvent.AdapterPoweredOff)
+            when (intent.action) {
+                BluetoothAdapter.ACTION_STATE_CHANGED -> {
+                    val state = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR)
+                    val adapterWasHandled = connectionManager.handleAdapterStateChanged(state)
+                    discoveryManager.handleAdapterStateChanged(state)
+                    refreshPermissionState()
+                    if (adapterWasHandled) {
+                        mutableControllerEvents.tryEmit(CollectorBluetoothControllerEvent.AdapterPoweredOff)
+                    }
+                }
+                BluetoothDevice.ACTION_ACL_DISCONNECTED -> {
+                    mutableControllerEvents.tryEmit(CollectorBluetoothControllerEvent.LinkLost)
+                }
             }
         }
     }
@@ -226,7 +234,10 @@ private class AndroidCollectorBluetoothController(
         pairingCoordinator.register()
         context.registerReceiver(
             adapterStateReceiver,
-            IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED),
+            IntentFilter().apply {
+                addAction(BluetoothAdapter.ACTION_STATE_CHANGED)
+                addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED)
+            },
         )
         bondedDeviceManager.refreshBondedDevices()
         if (bondedAddressesJob?.isActive != true) {
@@ -306,6 +317,14 @@ private class AndroidCollectorBluetoothController(
 
     override suspend fun drainIncomingBytes(maxBytes: Int): ByteArray {
         return connectionManager.drainIncomingBytes(maxBytes)
+    }
+
+    override suspend fun blockingReadBytes(): ByteArray {
+        return connectionManager.blockingReadBytes()
+    }
+
+    override suspend fun blockingReadBytesWithTimeout(timeoutMs: Long): ByteArray? {
+        return connectionManager.blockingReadBytesWithTimeout(timeoutMs)
     }
 
     override fun shutdown() {

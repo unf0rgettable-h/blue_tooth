@@ -37,6 +37,7 @@ data class RestoredCollectorSession(
 
 sealed interface CollectorBluetoothControllerEvent {
     data object AdapterPoweredOff : CollectorBluetoothControllerEvent
+    data object LinkLost : CollectorBluetoothControllerEvent
 }
 
 sealed interface CollectorUiEvent {
@@ -98,6 +99,10 @@ interface CollectorBluetoothController {
     suspend fun disconnect()
 
     suspend fun drainIncomingBytes(maxBytes: Int = 1024): ByteArray
+
+    suspend fun blockingReadBytes(): ByteArray
+
+    suspend fun blockingReadBytesWithTimeout(timeoutMs: Long): ByteArray?
 
     fun shutdown()
 }
@@ -172,6 +177,15 @@ class CollectorViewModel(
                             it.copy(
                                 connectionState = BluetoothConnectionState.DISCONNECTED,
                                 statusMessage = "bluetooth_disabled",
+                            )
+                        }
+                    }
+                    CollectorBluetoothControllerEvent.LinkLost -> {
+                        stopReceivingInternal(resumeIdleDrain = false)
+                        mutableUiState.update {
+                            it.copy(
+                                connectionState = BluetoothConnectionState.DISCONNECTED,
+                                statusMessage = "bluetooth_link_lost",
                             )
                         }
                     }
@@ -375,7 +389,33 @@ class CollectorViewModel(
                 return@launch
             }
             receiveJob = CoroutineScope(SupervisorJob() + receiveDispatcher).launch {
-                receiveLoop(activeSession)
+                receiveLoop(activeSession, importMode = false)
+            }
+        }
+    }
+
+    fun onStartImportRequested() {
+        scope.launch {
+            if (uiState.value.connectionState != BluetoothConnectionState.CONNECTED) {
+                mutableUiState.update { it.copy(statusMessage = "receive_requires_connected_state") }
+                return@launch
+            }
+
+            val activeSession = ensureActiveSession() ?: return@launch
+            mutableUiState.update {
+                it.copy(
+                    currentSession = activeSession,
+                    isReceiving = true,
+                    isImporting = true,
+                    statusMessage = null,
+                )
+            }
+            cancelIdleDrain()
+            if (receiveJob?.isActive == true) {
+                return@launch
+            }
+            receiveJob = CoroutineScope(SupervisorJob() + receiveDispatcher).launch {
+                receiveLoop(activeSession, importMode = true)
             }
         }
     }
@@ -486,15 +526,45 @@ class CollectorViewModel(
         }.getOrNull()
     }
 
-    private suspend fun receiveLoop(session: Session) {
+    private suspend fun receiveLoop(session: Session, importMode: Boolean = false) {
+        val startCount = mutableUiState.value.receivedCount
         while (mutableUiState.value.isReceiving &&
             mutableUiState.value.connectionState == BluetoothConnectionState.CONNECTED
         ) {
-            val incoming = bluetoothController.drainIncomingBytes()
-            if (incoming.isEmpty()) {
-                delay(RECEIVE_IDLE_DELAY_MS)
-                continue
+            val hasReceivedRecords = mutableUiState.value.receivedCount > startCount
+            val incoming = try {
+                if (importMode && hasReceivedRecords) {
+                    // Already received records in this import — use silence timeout to detect end.
+                    bluetoothController.blockingReadBytesWithTimeout(IMPORT_SILENCE_TIMEOUT_MS)
+                        ?: run {
+                            val totalImported = mutableUiState.value.receivedCount - startCount
+                            stopReceivingInternal(resumeIdleDrain = true)
+                            mutableUiState.update {
+                                it.copy(
+                                    isImporting = false,
+                                    statusMessage = "已导入 $totalImported 条记录",
+                                )
+                            }
+                            return
+                        }
+                } else {
+                    bluetoothController.blockingReadBytes()
+                }
+            } catch (e: java.io.IOException) {
+                // Socket threw on read — physical link dropped.
+                parser.dropIncompleteFragment()
+                cancelIdleDrain()
+                mutableUiState.update {
+                    it.copy(
+                        isReceiving = false,
+                        isImporting = false,
+                        connectionState = BluetoothConnectionState.DISCONNECTED,
+                        statusMessage = "bluetooth_link_lost",
+                    )
+                }
+                return
             }
+            if (incoming.isEmpty()) continue
             val parseResult = parser.accept(
                 chunk = incoming.toString(Charsets.UTF_8),
                 delimiterStrategy = session.delimiterStrategy,
@@ -563,7 +633,7 @@ class CollectorViewModel(
         receiveJob?.cancel()
         receiveJob = null
         parser.dropIncompleteFragment()
-        mutableUiState.update { it.copy(isReceiving = false) }
+        mutableUiState.update { it.copy(isReceiving = false, isImporting = false) }
         if (resumeIdleDrain && mutableUiState.value.connectionState == BluetoothConnectionState.CONNECTED) {
             ensureIdleDrainLoop()
         } else {
@@ -581,5 +651,6 @@ class CollectorViewModel(
 
     companion object {
         private const val RECEIVE_IDLE_DELAY_MS = 250L
+        private const val IMPORT_SILENCE_TIMEOUT_MS = 3_000L
     }
 }

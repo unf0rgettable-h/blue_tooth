@@ -5,8 +5,11 @@ import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothSocket
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import java.io.InputStream
 import java.util.UUID
 import java.util.concurrent.Executors
@@ -132,6 +135,32 @@ class BluetoothConnectionManager(
                 if (read <= 0) ByteArray(0) else buffer.copyOf(read)
             }
         }.getOrDefault(ByteArray(0))
+    }
+
+    // Blocks until at least one byte arrives, or throws IOException on disconnect.
+    // Use this in the active receive loop instead of drainIncomingBytes().
+    suspend fun blockingReadBytes(bufferSize: Int = 4096): ByteArray = withContext(Dispatchers.IO) {
+        val stream = inputStream ?: return@withContext ByteArray(0)
+        val buffer = ByteArray(bufferSize)
+        val bytesRead = stream.read(buffer)
+        if (bytesRead <= 0) ByteArray(0) else buffer.copyOf(bytesRead)
+    }
+
+    // Same as blockingReadBytes but returns null if no data arrives within timeoutMs.
+    // Used in import mode to detect end-of-transmission silence.
+    suspend fun blockingReadBytesWithTimeout(timeoutMs: Long, bufferSize: Int = 4096): ByteArray? {
+        return try {
+            withTimeout(timeoutMs) {
+                withContext(Dispatchers.IO) {
+                    val stream = inputStream ?: return@withContext ByteArray(0)
+                    val buffer = ByteArray(bufferSize)
+                    val bytesRead = runInterruptible { stream.read(buffer) }
+                    if (bytesRead <= 0) ByteArray(0) else buffer.copyOf(bytesRead)
+                }
+            }
+        } catch (_: TimeoutCancellationException) {
+            null
+        }
     }
 
     fun isConnected(): Boolean = socket?.isConnected == true

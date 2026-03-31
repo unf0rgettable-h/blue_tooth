@@ -25,16 +25,14 @@ class TextStreamRecordParser(
         delimiterStrategy: DelimiterStrategy,
     ): TextStreamParseResult {
         buffer += chunk
-        var overflowed = false
-
-        if (buffer.length > bufferLimitBytes) {
-            buffer = buffer.takeLast(retainedTailBytes.coerceAtMost(buffer.length))
-            overflowed = true
-        }
-
         val completed = when (delimiterStrategy) {
             DelimiterStrategy.LINE_DELIMITED -> consumeLineDelimited()
             DelimiterStrategy.WHITESPACE_TOKEN -> consumeWhitespaceTokens()
+        }
+        var overflowed = false
+        if (buffer.length > bufferLimitBytes) {
+            buffer = buffer.takeLast(retainedTailBytes.coerceAtMost(buffer.length))
+            overflowed = true
         }
 
         return TextStreamParseResult(

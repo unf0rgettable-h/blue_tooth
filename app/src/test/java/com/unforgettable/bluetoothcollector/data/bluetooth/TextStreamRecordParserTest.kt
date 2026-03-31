@@ -75,6 +75,20 @@ class TextStreamRecordParserTest {
     }
 
     @Test
+    fun overflow_preserves_completed_records_before_trimming_tail() {
+        val parser = TextStreamRecordParser(bufferLimitBytes = 8, retainedTailBytes = 4)
+
+        val result = parser.accept(
+            chunk = "DONE\nABCDEFGHIJK",
+            delimiterStrategy = DelimiterStrategy.LINE_DELIMITED,
+        )
+
+        assertEquals(listOf("DONE"), result.completed.map { it.rawPayload })
+        assertTrue(result.overflowed)
+        assertEquals("HIJK", result.remainingBuffer)
+    }
+
+    @Test
     fun cleaned_text_is_preserved_when_not_parsed() {
         val parser = TextStreamRecordParser()
 

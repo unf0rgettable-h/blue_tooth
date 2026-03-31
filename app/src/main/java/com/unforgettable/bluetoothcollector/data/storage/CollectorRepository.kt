@@ -1,5 +1,6 @@
 package com.unforgettable.bluetoothcollector.data.storage
 
+import androidx.room.withTransaction
 import com.unforgettable.bluetoothcollector.domain.model.DelimiterStrategy
 import java.util.UUID
 import kotlinx.coroutines.sync.Mutex
@@ -12,7 +13,7 @@ fun interface TransactionRunner {
 class CollectorRepository(
     private val sessionDao: SessionDao,
     private val measurementRecordDao: MeasurementRecordDao,
-    private val transactionRunner: TransactionRunner = TransactionRunner { block -> block() },
+    private val transactionRunner: TransactionRunner,
 ) {
     private val sessionMutex = Mutex()
 
@@ -75,6 +76,16 @@ class CollectorRepository(
         transactionRunner.run {
             measurementRecordDao.deleteBySessionId(currentSession.sessionId)
             sessionDao.deleteBySessionId(currentSession.sessionId)
+        }
+    }
+
+    companion object {
+        fun fromDatabase(database: AppDatabase): CollectorRepository {
+            return CollectorRepository(
+                sessionDao = database.sessionDao(),
+                measurementRecordDao = database.measurementRecordDao(),
+                transactionRunner = TransactionRunner { block -> database.withTransaction { block() } },
+            )
         }
     }
 }

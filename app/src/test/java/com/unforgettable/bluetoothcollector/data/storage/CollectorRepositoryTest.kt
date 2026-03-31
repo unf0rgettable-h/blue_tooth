@@ -9,12 +9,13 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CollectorRepositoryTest {
+    private val noOpTransactionRunner = TransactionRunner { block -> block() }
 
     @Test
     fun creates_current_session_when_absent() = runBlocking {
         val sessionDao = FakeSessionDao()
         val recordDao = FakeMeasurementRecordDao()
-        val repository = CollectorRepository(sessionDao, recordDao)
+        val repository = CollectorRepository(sessionDao, recordDao, noOpTransactionRunner)
 
         val session = repository.ensureCurrentSession(
             startedAt = "2026-03-31T10:00:00+08:00",
@@ -34,7 +35,7 @@ class CollectorRepositoryTest {
     fun appends_record_to_current_session() = runBlocking {
         val sessionDao = FakeSessionDao()
         val recordDao = FakeMeasurementRecordDao()
-        val repository = CollectorRepository(sessionDao, recordDao)
+        val repository = CollectorRepository(sessionDao, recordDao, noOpTransactionRunner)
         val session = repository.ensureCurrentSession(
             startedAt = "2026-03-31T10:00:00+08:00",
             instrumentBrand = "leica",
@@ -81,7 +82,7 @@ class CollectorRepositoryTest {
             )
         }
         val recordDao = FakeMeasurementRecordDao()
-        val repository = CollectorRepository(sessionDao, recordDao)
+        val repository = CollectorRepository(sessionDao, recordDao, noOpTransactionRunner)
 
         val restored = repository.restoreCurrentSession()
 
@@ -118,7 +119,7 @@ class CollectorRepositoryTest {
                 parsedValue = "123.456",
             )
         }
-        val repository = CollectorRepository(sessionDao, recordDao)
+        val repository = CollectorRepository(sessionDao, recordDao, noOpTransactionRunner)
 
         repository.clearCurrentSession()
 
@@ -131,7 +132,7 @@ class CollectorRepositoryTest {
     fun same_session_continuation_allowed_for_same_instrument_and_device() = runBlocking {
         val sessionDao = FakeSessionDao()
         val recordDao = FakeMeasurementRecordDao()
-        val repository = CollectorRepository(sessionDao, recordDao)
+        val repository = CollectorRepository(sessionDao, recordDao, noOpTransactionRunner)
 
         val first = repository.ensureCurrentSession(
             startedAt = "2026-03-31T10:00:00+08:00",
@@ -155,10 +156,43 @@ class CollectorRepositoryTest {
     }
 
     @Test
+    fun metadata_change_requires_current_session_clear() = runBlocking {
+        val sessionDao = FakeSessionDao()
+        val recordDao = FakeMeasurementRecordDao()
+        val repository = CollectorRepository(sessionDao, recordDao, noOpTransactionRunner)
+
+        repository.ensureCurrentSession(
+            startedAt = "2026-03-31T10:00:00+08:00",
+            instrumentBrand = "leica",
+            instrumentModel = "TS02",
+            bluetoothDeviceName = "Leica TS02",
+            bluetoothDeviceAddress = "00:11:22:33:44:55",
+            delimiterStrategy = DelimiterStrategy.LINE_DELIMITED,
+        )
+
+        val failure = runCatching {
+            repository.ensureCurrentSession(
+                startedAt = "2026-03-31T10:05:00+08:00",
+                instrumentBrand = "sokkia",
+                instrumentModel = "SX-103",
+                bluetoothDeviceName = "Sokkia SX-103",
+                bluetoothDeviceAddress = "66:77:88:99:AA:BB",
+                delimiterStrategy = DelimiterStrategy.WHITESPACE_TOKEN,
+            )
+        }
+
+        assertTrue(failure.isFailure)
+        assertEquals(
+            "current_session_metadata_mismatch_requires_clear",
+            failure.exceptionOrNull()?.message,
+        )
+    }
+
+    @Test
     fun repository_stays_persistence_focused() = runBlocking {
         val sessionDao = FakeSessionDao()
         val recordDao = FakeMeasurementRecordDao()
-        val repository = CollectorRepository(sessionDao, recordDao)
+        val repository = CollectorRepository(sessionDao, recordDao, noOpTransactionRunner)
         val methodNames = repository.javaClass.declaredMethods.map { it.name }
 
         assertFalse(methodNames.any { it.contains("connect", ignoreCase = true) })

@@ -198,6 +198,53 @@ class CollectorRepositoryTest {
         assertFalse(methodNames.any { it.contains("connect", ignoreCase = true) })
         assertFalse(methodNames.any { it.contains("discover", ignoreCase = true) })
     }
+
+    @Test
+    fun append_record_stamps_current_session_metadata_and_duplicate_ids_fail() = runBlocking {
+        val sessionDao = FakeSessionDao()
+        val recordDao = FakeMeasurementRecordDao()
+        val repository = CollectorRepository(sessionDao, recordDao, noOpTransactionRunner)
+
+        val session = repository.ensureCurrentSession(
+            startedAt = "2026-03-31T10:00:00+08:00",
+            instrumentBrand = "leica",
+            instrumentModel = "TS02",
+            bluetoothDeviceName = "Leica TS02",
+            bluetoothDeviceAddress = "00:11:22:33:44:55",
+            delimiterStrategy = DelimiterStrategy.LINE_DELIMITED,
+        )
+
+        repository.appendRecord(
+            sessionId = session.sessionId,
+            record = MeasurementRecordEntity(
+                id = "r1",
+                sessionId = "wrong-session",
+                sequence = 1,
+                receivedAt = "2026-03-31T10:00:01+08:00",
+                instrumentBrand = "wrong-brand",
+                instrumentModel = "wrong-model",
+                bluetoothDeviceName = "Wrong Name",
+                bluetoothDeviceAddress = "AA:BB:CC:DD:EE:FF",
+                rawPayload = "01123.456",
+                parsedCode = "01",
+                parsedValue = "123.456",
+            ),
+        )
+
+        val saved = recordDao.records.single()
+        assertEquals("leica", saved.instrumentBrand)
+        assertEquals("TS02", saved.instrumentModel)
+        assertEquals("Leica TS02", saved.bluetoothDeviceName)
+        assertEquals("00:11:22:33:44:55", saved.bluetoothDeviceAddress)
+
+        val duplicate = runCatching {
+            repository.appendRecord(
+                sessionId = session.sessionId,
+                record = saved.copy(receivedAt = "2026-03-31T10:00:02+08:00"),
+            )
+        }
+        assertTrue(duplicate.isFailure)
+    }
 }
 
 private class FakeSessionDao : SessionDao {
@@ -223,6 +270,9 @@ private class FakeMeasurementRecordDao : MeasurementRecordDao {
     val records = mutableListOf<MeasurementRecordEntity>()
 
     override suspend fun insert(record: MeasurementRecordEntity) {
+        if (records.any { it.id == record.id }) {
+            throw IllegalStateException("duplicate_record_id")
+        }
         records += record
     }
 

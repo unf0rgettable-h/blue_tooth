@@ -7,7 +7,7 @@ import androidx.room.Query
 
 @Dao
 interface MeasurementRecordDao {
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(record: MeasurementRecordEntity)
 
     @Query("DELETE FROM measurement_records WHERE sessionId = :sessionId")

@@ -66,7 +66,15 @@ class CollectorRepository(
             if (current.sessionId != sessionId) {
                 throw IllegalStateException("record_append_requires_current_session")
             }
-            measurementRecordDao.insert(record.copy(sessionId = sessionId))
+            measurementRecordDao.insert(
+                record.copy(
+                    sessionId = sessionId,
+                    instrumentBrand = current.instrumentBrand,
+                    instrumentModel = current.instrumentModel,
+                    bluetoothDeviceName = current.bluetoothDeviceName,
+                    bluetoothDeviceAddress = current.bluetoothDeviceAddress,
+                ),
+            )
             sessionDao.upsert(current.copy(updatedAt = record.receivedAt))
         }
     }

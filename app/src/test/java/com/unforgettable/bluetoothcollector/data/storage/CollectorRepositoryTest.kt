@@ -176,8 +176,12 @@ private class FakeSessionDao : SessionDao {
 
     override suspend fun getCurrentSession(): SessionEntity? = sessions.firstOrNull { it.isCurrent }
 
-    override suspend fun clearCurrentSession() {
-        sessions.removeAll { it.isCurrent }
+    override suspend fun clearCurrentFlags() {
+        sessions.replaceAll { it.copy(isCurrent = false) }
+    }
+
+    override suspend fun deleteBySessionId(sessionId: String) {
+        sessions.removeAll { it.sessionId == sessionId }
     }
 }
 

@@ -2,11 +2,20 @@ package com.unforgettable.bluetoothcollector.data.storage
 
 import com.unforgettable.bluetoothcollector.domain.model.DelimiterStrategy
 import java.util.UUID
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+
+fun interface TransactionRunner {
+    suspend fun run(block: suspend () -> Unit)
+}
 
 class CollectorRepository(
     private val sessionDao: SessionDao,
     private val measurementRecordDao: MeasurementRecordDao,
+    private val transactionRunner: TransactionRunner = TransactionRunner { block -> block() },
 ) {
+    private val sessionMutex = Mutex()
+
     suspend fun ensureCurrentSession(
         startedAt: String,
         instrumentBrand: String,
@@ -14,16 +23,15 @@ class CollectorRepository(
         bluetoothDeviceName: String,
         bluetoothDeviceAddress: String,
         delimiterStrategy: DelimiterStrategy,
-    ): SessionEntity {
+    ): SessionEntity = sessionMutex.withLock {
         val existing = sessionDao.getCurrentSession()
         if (existing != null &&
             existing.instrumentBrand == instrumentBrand &&
             existing.instrumentModel == instrumentModel &&
-            existing.bluetoothDeviceName == bluetoothDeviceName &&
             existing.bluetoothDeviceAddress == bluetoothDeviceAddress &&
             existing.delimiterStrategy == delimiterStrategy
         ) {
-            return existing
+            return@withLock existing
         }
         if (existing != null) {
             throw IllegalStateException("current_session_metadata_mismatch_requires_clear")
@@ -40,22 +48,33 @@ class CollectorRepository(
             delimiterStrategy = delimiterStrategy,
             isCurrent = true,
         )
-        sessionDao.upsert(session)
-        return session
+        transactionRunner.run {
+            sessionDao.clearCurrentFlags()
+            sessionDao.upsert(session)
+        }
+        session
     }
 
     suspend fun appendRecord(
         sessionId: String,
         record: MeasurementRecordEntity,
     ) {
-        measurementRecordDao.insert(record.copy(sessionId = sessionId))
+        transactionRunner.run {
+            measurementRecordDao.insert(record.copy(sessionId = sessionId))
+            val current = sessionDao.getCurrentSession()
+            if (current?.sessionId == sessionId) {
+                sessionDao.upsert(current.copy(updatedAt = record.receivedAt))
+            }
+        }
     }
 
     suspend fun restoreCurrentSession(): SessionEntity? = sessionDao.getCurrentSession()
 
     suspend fun clearCurrentSession() {
         val currentSession = sessionDao.getCurrentSession() ?: return
-        measurementRecordDao.deleteBySessionId(currentSession.sessionId)
-        sessionDao.clearCurrentSession()
+        transactionRunner.run {
+            measurementRecordDao.deleteBySessionId(currentSession.sessionId)
+            sessionDao.deleteBySessionId(currentSession.sessionId)
+        }
     }
 }

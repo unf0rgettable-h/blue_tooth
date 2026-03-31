@@ -12,6 +12,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestDispatcher
@@ -217,6 +218,52 @@ class CollectorViewModelTest {
         assertEquals(ExportFormat.CSV, event.format)
     }
 
+    @Test
+    fun app_backgrounded_stops_receiving_and_keeps_connection_state() = runTest(mainDispatcherRule.dispatcher) {
+        val bluetooth = FakeCollectorBluetoothController(
+            pairedDevices = listOf(sampleBondedDevice()),
+        )
+        val viewModel = createViewModel(
+            repository = FakeCollectorDataRepository(),
+            bluetooth = bluetooth,
+        )
+
+        viewModel.onInstrumentBrandSelected("leica")
+        viewModel.onInstrumentModelSelected("TS02")
+        viewModel.onConnectRequested(sampleBondedDevice().address)
+        advanceUntilIdle()
+        viewModel.onStartReceivingRequested()
+        advanceUntilIdle()
+
+        viewModel.onAppBackgrounded()
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.isReceiving)
+        assertEquals(BluetoothConnectionState.CONNECTED, viewModel.uiState.value.connectionState)
+        assertEquals("receiving_paused_backgrounded", viewModel.uiState.value.statusMessage)
+    }
+
+    @Test
+    fun active_session_locks_brand_model_and_target_selection() = runTest(mainDispatcherRule.dispatcher) {
+        val viewModel = createViewModel(
+            repository = FakeCollectorDataRepository(
+                restoredSession = RestoredCollectorSession(
+                    session = sampleSession(),
+                    records = listOf(sampleRecord(sequence = 1, rawPayload = "01123.456")),
+                ),
+            ),
+        )
+        advanceUntilIdle()
+
+        viewModel.onInstrumentBrandSelected("sokkia")
+        viewModel.onInstrumentModelSelected("SX-103")
+        viewModel.onTargetDeviceSelected("66:77:88:99:AA:BB")
+
+        assertEquals("leica", viewModel.uiState.value.selectedBrandId)
+        assertEquals("TS02", viewModel.uiState.value.selectedModelId)
+        assertEquals(sampleBondedDevice().address, viewModel.uiState.value.selectedTargetDeviceAddress)
+    }
+
     private fun createViewModel(
         repository: FakeCollectorDataRepository = FakeCollectorDataRepository(),
         bluetooth: FakeCollectorBluetoothController = FakeCollectorBluetoothController(),
@@ -352,6 +399,7 @@ private class FakeCollectorBluetoothController(
     override val pairedDevices: StateFlow<List<BondedBluetoothDeviceItem>> = mutablePairedDevices
     override val isDiscovering: StateFlow<Boolean> = mutableIsDiscovering
     override val permissionState: StateFlow<CollectorPermissionUiState> = mutablePermissionState
+    override val controllerEvents = emptyFlow<CollectorBluetoothControllerEvent>()
 
     val connectRequests = mutableListOf<String>()
     var cancelDiscoveryCalls: Int = 0

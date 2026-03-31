@@ -124,6 +124,17 @@ class BluetoothDiscoveryManager(
             .getOrDefault(BluetoothPermissionChecker.LEGACY_DISCOVERY_BOND_STATE_UNKNOWN)
     }
 
+    fun handleAdapterStateChanged(state: Int): Boolean {
+        return if (state == BluetoothAdapter.STATE_TURNING_OFF || state == BluetoothAdapter.STATE_OFF) {
+            discoveredMap.clear()
+            mutableDiscoveredDevices.value = emptyList()
+            mutableIsDiscovering.value = false
+            true
+        } else {
+            false
+        }
+    }
+
     companion object {
         @SuppressLint("MissingPermission")
         private fun currentAdapterDiscoveryState(adapter: BluetoothAdapter?): Boolean {

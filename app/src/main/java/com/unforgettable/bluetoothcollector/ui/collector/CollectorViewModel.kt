@@ -35,6 +35,10 @@ data class RestoredCollectorSession(
     val records: List<MeasurementRecord>,
 )
 
+sealed interface CollectorBluetoothControllerEvent {
+    data object AdapterPoweredOff : CollectorBluetoothControllerEvent
+}
+
 sealed interface CollectorUiEvent {
     data class ShareExport(
         val file: File,
@@ -71,6 +75,7 @@ interface CollectorBluetoothController {
     val pairedDevices: StateFlow<List<BondedBluetoothDeviceItem>>
     val isDiscovering: StateFlow<Boolean>
     val permissionState: StateFlow<CollectorPermissionUiState>
+    val controllerEvents: Flow<CollectorBluetoothControllerEvent>
 
     fun refreshPermissionState()
 
@@ -118,6 +123,7 @@ class CollectorViewModel(
     private val mutableUiState = MutableStateFlow(CollectorUiState())
     private val mutableEvents = MutableSharedFlow<CollectorUiEvent>(extraBufferCapacity = 1)
     private var receiveJob: Job? = null
+    private var idleDrainJob: Job? = null
 
     val uiState: StateFlow<CollectorUiState> = mutableUiState.stateIn(
         scope = scope,
@@ -158,11 +164,27 @@ class CollectorViewModel(
             }
         }
         scope.launch {
+            bluetoothController.controllerEvents.collectLatest { event ->
+                when (event) {
+                    CollectorBluetoothControllerEvent.AdapterPoweredOff -> {
+                        stopReceivingInternal(resumeIdleDrain = false)
+                        mutableUiState.update {
+                            it.copy(
+                                connectionState = BluetoothConnectionState.DISCONNECTED,
+                                statusMessage = "bluetooth_disabled",
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        scope.launch {
             restoreCurrentSession()
         }
     }
 
     fun onInstrumentBrandSelected(brandId: String) {
+        if (uiState.value.isSelectionLocked() && uiState.value.selectedBrandId != brandId) return
         val nextModelId = InstrumentCatalog.models.firstOrNull { it.brandId == brandId }?.modelId
         mutableUiState.update {
             it.copy(
@@ -174,6 +196,7 @@ class CollectorViewModel(
     }
 
     fun onInstrumentModelSelected(modelId: String) {
+        if (uiState.value.isSelectionLocked() && uiState.value.selectedModelId != modelId) return
         val matchedModel = InstrumentCatalog.models.firstOrNull { it.modelId == modelId }
         mutableUiState.update {
             it.copy(
@@ -185,6 +208,7 @@ class CollectorViewModel(
     }
 
     fun onTargetDeviceSelected(address: String) {
+        if (uiState.value.isSelectionLocked() && uiState.value.selectedTargetDeviceAddress != address) return
         mutableUiState.update {
             it.copy(
                 selectedTargetDeviceAddress = address,
@@ -226,6 +250,21 @@ class CollectorViewModel(
     fun onRefreshPairedDevicesRequested() {
         scope.launch {
             bluetoothController.refreshPairedDevices()
+        }
+    }
+
+    fun onAppForegrounded() {
+        bluetoothController.refreshPermissionState()
+        onRefreshPairedDevicesRequested()
+    }
+
+    fun onAppBackgrounded() {
+        if (!uiState.value.isReceiving) return
+        scope.launch {
+            stopReceivingInternal(resumeIdleDrain = true)
+            mutableUiState.update {
+                it.copy(statusMessage = "receiving_paused_backgrounded")
+            }
         }
     }
 
@@ -271,6 +310,7 @@ class CollectorViewModel(
                         statusMessage = null,
                     )
                 }
+                ensureIdleDrainLoop()
             }.onFailure { failure ->
                 mutableUiState.update {
                     it.copy(
@@ -304,7 +344,7 @@ class CollectorViewModel(
 
     fun onDisconnectRequested() {
         scope.launch {
-            stopReceivingInternal()
+            stopReceivingInternal(resumeIdleDrain = false)
             bluetoothController.disconnect()
             mutableUiState.update {
                 it.copy(
@@ -330,6 +370,7 @@ class CollectorViewModel(
                     statusMessage = null,
                 )
             }
+            cancelIdleDrain()
             if (receiveJob?.isActive == true) {
                 return@launch
             }
@@ -341,7 +382,7 @@ class CollectorViewModel(
 
     fun onStopReceivingRequested() {
         scope.launch {
-            stopReceivingInternal()
+            stopReceivingInternal(resumeIdleDrain = true)
         }
     }
 
@@ -351,7 +392,7 @@ class CollectorViewModel(
                 mutableUiState.update { it.copy(statusMessage = "clear_requires_disconnected_state") }
                 return@launch
             }
-            stopReceivingInternal()
+            stopReceivingInternal(resumeIdleDrain = false)
             repository.clearCurrentSession()
             parser.dropIncompleteFragment()
             mutableUiState.update {
@@ -458,6 +499,11 @@ class CollectorViewModel(
                 chunk = incoming.toString(Charsets.UTF_8),
                 delimiterStrategy = session.delimiterStrategy,
             )
+            if (parseResult.completed.isEmpty() && parseResult.overflowed) {
+                mutableUiState.update {
+                    it.copy(statusMessage = "incoming_buffer_overflow_trimmed")
+                }
+            }
             parseResult.completed.forEach { parsedRecord ->
                 val nextSequence = mutableUiState.value.previewRecords.size.toLong() + 1L
                 val receivedAt = timeProvider.now()
@@ -491,15 +537,43 @@ class CollectorViewModel(
         }
     }
 
-    private suspend fun stopReceivingInternal() {
+    private fun ensureIdleDrainLoop() {
+        if (idleDrainJob?.isActive == true) return
+        if (mutableUiState.value.connectionState != BluetoothConnectionState.CONNECTED || mutableUiState.value.isReceiving) {
+            return
+        }
+        idleDrainJob = CoroutineScope(SupervisorJob() + receiveDispatcher).launch {
+            while (!mutableUiState.value.isReceiving &&
+                mutableUiState.value.connectionState == BluetoothConnectionState.CONNECTED
+            ) {
+                bluetoothController.drainIncomingBytes()
+                delay(RECEIVE_IDLE_DELAY_MS)
+            }
+        }
+    }
+
+    private fun cancelIdleDrain() {
+        idleDrainJob?.cancel()
+        idleDrainJob = null
+    }
+
+    private suspend fun stopReceivingInternal(
+        resumeIdleDrain: Boolean,
+    ) {
         receiveJob?.cancel()
         receiveJob = null
         parser.dropIncompleteFragment()
         mutableUiState.update { it.copy(isReceiving = false) }
+        if (resumeIdleDrain && mutableUiState.value.connectionState == BluetoothConnectionState.CONNECTED) {
+            ensureIdleDrainLoop()
+        } else {
+            cancelIdleDrain()
+        }
     }
 
     override fun onCleared() {
         receiveJob?.cancel()
+        idleDrainJob?.cancel()
         bluetoothController.shutdown()
         scope.cancel()
         super.onCleared()

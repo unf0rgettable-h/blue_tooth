@@ -40,3 +40,7 @@ fun CollectorUiState.filteredModels(): List<InstrumentModel> {
     val brandId = selectedBrandId ?: return emptyList()
     return availableModels.filter { it.brandId == brandId }
 }
+
+fun CollectorUiState.isSelectionLocked(): Boolean {
+    return currentSession != null || connectionState != BluetoothConnectionState.DISCONNECTED
+}

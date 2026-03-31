@@ -1,7 +1,10 @@
 package com.unforgettable.bluetoothcollector.ui.collector
 
 import android.bluetooth.BluetoothAdapter
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
@@ -11,6 +14,9 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -41,8 +47,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -50,6 +59,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun CollectorRoute() {
     val appContext = LocalContext.current.applicationContext
+    val lifecycleOwner = LocalLifecycleOwner.current
     val dependencies = remember { CollectorAppDependenciesHolder.get(appContext) }
     val bluetoothController = dependencies.bluetoothController
     val permissionChecker = dependencies.permissionChecker
@@ -78,6 +88,20 @@ fun CollectorRoute() {
         bluetoothController.register()
         onDispose {
             bluetoothController.unregister()
+        }
+    }
+
+    DisposableEffect(lifecycleOwner, viewModel) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_START -> viewModel.onAppForegrounded()
+                Lifecycle.Event.ON_STOP -> viewModel.onAppBackgrounded()
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
         }
     }
 
@@ -153,6 +177,7 @@ private class CollectorViewModelFactory(
 }
 
 private class AndroidCollectorBluetoothController(
+    private val context: Context,
     private val permissionChecker: BluetoothPermissionChecker,
     private val discoveryManager: BluetoothDiscoveryManager,
     private val bondedDeviceManager: BondedDeviceManager,
@@ -161,9 +186,22 @@ private class AndroidCollectorBluetoothController(
 ) : CollectorBluetoothController {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mutablePermissionState = MutableStateFlow(permissionChecker.currentState().toUiState())
+    private val mutableControllerEvents = MutableSharedFlow<CollectorBluetoothControllerEvent>(extraBufferCapacity = 1)
     private var bondedAddressesJob: Job? = null
     private val registrationLock = Any()
     private var registrationCount: Int = 0
+    private val adapterStateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action != BluetoothAdapter.ACTION_STATE_CHANGED) return
+            val state = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR)
+            val adapterWasHandled = connectionManager.handleAdapterStateChanged(state)
+            discoveryManager.handleAdapterStateChanged(state)
+            refreshPermissionState()
+            if (adapterWasHandled) {
+                mutableControllerEvents.tryEmit(CollectorBluetoothControllerEvent.AdapterPoweredOff)
+            }
+        }
+    }
 
     override val nearbyDevices: StateFlow<List<com.unforgettable.bluetoothcollector.domain.model.DiscoveredBluetoothDeviceItem>> =
         discoveryManager.discoveredDevices
@@ -173,6 +211,8 @@ private class AndroidCollectorBluetoothController(
         discoveryManager.isDiscovering
     override val permissionState: StateFlow<CollectorPermissionUiState> =
         mutablePermissionState
+    override val controllerEvents: Flow<CollectorBluetoothControllerEvent> =
+        mutableControllerEvents.asSharedFlow()
 
     fun register() {
         val shouldRegister = synchronized(registrationLock) {
@@ -184,6 +224,10 @@ private class AndroidCollectorBluetoothController(
         refreshPermissionState()
         discoveryManager.register()
         pairingCoordinator.register()
+        context.registerReceiver(
+            adapterStateReceiver,
+            IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED),
+        )
         bondedDeviceManager.refreshBondedDevices()
         if (bondedAddressesJob?.isActive != true) {
             bondedAddressesJob = scope.launch {
@@ -207,6 +251,7 @@ private class AndroidCollectorBluetoothController(
         if (!shouldUnregister) return
         discoveryManager.unregister()
         pairingCoordinator.unregister()
+        runCatching { context.unregisterReceiver(adapterStateReceiver) }
     }
 
     override fun refreshPermissionState() {
@@ -309,6 +354,7 @@ private object CollectorAppDependenciesHolder {
             permissionChecker = permissionChecker,
         )
         val bluetoothController = AndroidCollectorBluetoothController(
+            context = context,
             permissionChecker = permissionChecker,
             discoveryManager = discoveryManager,
             bondedDeviceManager = bondedDeviceManager,

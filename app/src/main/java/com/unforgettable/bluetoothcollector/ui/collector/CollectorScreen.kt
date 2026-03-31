@@ -102,11 +102,13 @@ fun CollectorScreen(
                             models = uiState.filteredModels(),
                             selectedBrandId = uiState.selectedBrandId,
                             selectedModelId = uiState.selectedModelId,
+                            selectionLocked = uiState.isSelectionLocked(),
                             onBrandSelected = onInstrumentBrandSelected,
                             onModelSelected = onInstrumentModelSelected,
                         )
                         BluetoothPanel(
                             uiState = uiState,
+                            selectionLocked = uiState.isSelectionLocked(),
                             onTargetDeviceSelected = onTargetDeviceSelected,
                             onPairDeviceRequested = onPairDeviceRequested,
                         )
@@ -119,12 +121,14 @@ fun CollectorScreen(
                             models = uiState.filteredModels(),
                             selectedBrandId = uiState.selectedBrandId,
                             selectedModelId = uiState.selectedModelId,
+                            selectionLocked = uiState.isSelectionLocked(),
                             onBrandSelected = onInstrumentBrandSelected,
                             onModelSelected = onInstrumentModelSelected,
                         )
                         BluetoothPanel(
                             modifier = Modifier.weight(1.15f),
                             uiState = uiState,
+                            selectionLocked = uiState.isSelectionLocked(),
                             onTargetDeviceSelected = onTargetDeviceSelected,
                             onPairDeviceRequested = onPairDeviceRequested,
                         )
@@ -214,6 +218,7 @@ private fun InstrumentPanel(
     models: List<InstrumentModel>,
     selectedBrandId: String?,
     selectedModelId: String?,
+    selectionLocked: Boolean,
     onBrandSelected: (String) -> Unit,
     onModelSelected: (String) -> Unit,
     modifier: Modifier = Modifier,
@@ -227,6 +232,7 @@ private fun InstrumentPanel(
             label = "仪器品牌",
             options = brands,
             selectedId = selectedBrandId,
+            enabled = !selectionLocked,
             displayName = { it.displayName },
             optionId = { it.id },
             onSelect = onBrandSelected,
@@ -236,6 +242,7 @@ private fun InstrumentPanel(
             label = "仪器型号",
             options = models,
             selectedId = selectedModelId,
+            enabled = !selectionLocked,
             displayName = { it.displayName },
             optionId = { it.modelId },
             onSelect = onModelSelected,
@@ -256,6 +263,7 @@ private fun InstrumentPanel(
 @Composable
 private fun BluetoothPanel(
     uiState: CollectorUiState,
+    selectionLocked: Boolean,
     onTargetDeviceSelected: (String) -> Unit,
     onPairDeviceRequested: (String) -> Unit,
     modifier: Modifier = Modifier,
@@ -271,10 +279,18 @@ private fun BluetoothPanel(
             devices = uiState.nearbyDevices,
             selectedAddress = uiState.selectedTargetDeviceAddress,
             pairedAddresses = uiState.pairedDevices.map(BondedBluetoothDeviceItem::address).toSet(),
-            onSelect = onTargetDeviceSelected,
+            onSelect = if (selectionLocked) ({}) else onTargetDeviceSelected,
             onAction = onPairDeviceRequested,
             actionLabel = { paired -> if (paired) "已配对" else "配对" },
-            actionEnabled = { paired -> !paired && uiState.permissionState.canConnect },
+            actionEnabled = { address, paired ->
+                !paired &&
+                    uiState.permissionState.canConnect &&
+                    (
+                        !selectionLocked ||
+                            address == uiState.selectedTargetDeviceAddress ||
+                            address == uiState.currentSession?.bluetoothDeviceAddress
+                        )
+            },
         )
         Spacer(modifier = Modifier.height(12.dp))
         DeviceSection(
@@ -283,10 +299,10 @@ private fun BluetoothPanel(
             devices = uiState.pairedDevices,
             selectedAddress = uiState.selectedTargetDeviceAddress,
             pairedAddresses = uiState.pairedDevices.map(BondedBluetoothDeviceItem::address).toSet(),
-            onSelect = onTargetDeviceSelected,
-            onAction = onTargetDeviceSelected,
+            onSelect = if (selectionLocked) ({}) else onTargetDeviceSelected,
+            onAction = if (selectionLocked) ({}) else onTargetDeviceSelected,
             actionLabel = { "选中" },
-            actionEnabled = { true },
+            actionEnabled = { _, _ -> !selectionLocked },
         )
     }
 }
@@ -432,6 +448,7 @@ private fun <T> DropdownSelector(
     label: String,
     options: List<T>,
     selectedId: String?,
+    enabled: Boolean,
     displayName: (T) -> String,
     optionId: (T) -> String,
     onSelect: (String) -> Unit,
@@ -445,6 +462,7 @@ private fun <T> DropdownSelector(
         )
         OutlinedButton(
             modifier = Modifier.fillMaxWidth(),
+            enabled = enabled,
             onClick = { expanded = true },
         ) {
             Text(
@@ -482,7 +500,7 @@ private fun <T> DeviceSection(
     onSelect: (String) -> Unit,
     onAction: (String) -> Unit,
     actionLabel: (Boolean) -> String,
-    actionEnabled: (Boolean) -> Boolean,
+    actionEnabled: (String, Boolean) -> Boolean,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier) {
@@ -514,7 +532,7 @@ private fun <T> DeviceSection(
                         address = address,
                         selected = selected,
                         actionLabel = actionLabel(paired),
-                        actionEnabled = actionEnabled(paired),
+                        actionEnabled = actionEnabled(address, paired),
                         onSelect = { onSelect(address) },
                         onAction = { onAction(address) },
                     )

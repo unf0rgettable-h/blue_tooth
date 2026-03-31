@@ -59,20 +59,22 @@ class CollectorRepository(
     suspend fun appendRecord(
         sessionId: String,
         record: MeasurementRecordEntity,
-    ) {
+    ) = sessionMutex.withLock {
         transactionRunner.run {
-            measurementRecordDao.insert(record.copy(sessionId = sessionId))
             val current = sessionDao.getCurrentSession()
-            if (current?.sessionId == sessionId) {
-                sessionDao.upsert(current.copy(updatedAt = record.receivedAt))
+                ?: throw IllegalStateException("current_session_missing")
+            if (current.sessionId != sessionId) {
+                throw IllegalStateException("record_append_requires_current_session")
             }
+            measurementRecordDao.insert(record.copy(sessionId = sessionId))
+            sessionDao.upsert(current.copy(updatedAt = record.receivedAt))
         }
     }
 
     suspend fun restoreCurrentSession(): SessionEntity? = sessionDao.getCurrentSession()
 
-    suspend fun clearCurrentSession() {
-        val currentSession = sessionDao.getCurrentSession() ?: return
+    suspend fun clearCurrentSession() = sessionMutex.withLock {
+        val currentSession = sessionDao.getCurrentSession() ?: return@withLock
         transactionRunner.run {
             measurementRecordDao.deleteBySessionId(currentSession.sessionId)
             sessionDao.deleteBySessionId(currentSession.sessionId)

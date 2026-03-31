@@ -10,6 +10,7 @@ data class BluetoothPermissionState(
     val canDiscover: Boolean,
     val canConnect: Boolean,
     val bluetoothEnabled: Boolean,
+    val bluetoothStateTrusted: Boolean = true,
 )
 
 data class BluetoothDeviceSnapshot(
@@ -74,7 +75,7 @@ object BluetoothSessionPolicy {
     }
 
     fun discoveryAvailability(permissionState: BluetoothPermissionState): BluetoothActionDecision {
-        if (!permissionState.bluetoothEnabled) {
+        if (permissionState.bluetoothStateTrusted && !permissionState.bluetoothEnabled) {
             return BluetoothActionDecision(allowed = false, reason = "bluetooth_disabled")
         }
         return if (permissionState.canDiscover) {
@@ -85,7 +86,7 @@ object BluetoothSessionPolicy {
     }
 
     fun bondedConnectAvailability(permissionState: BluetoothPermissionState): BluetoothActionDecision {
-        if (!permissionState.bluetoothEnabled) {
+        if (permissionState.bluetoothStateTrusted && !permissionState.bluetoothEnabled) {
             return BluetoothActionDecision(allowed = false, reason = "bluetooth_disabled")
         }
         return if (permissionState.canConnect) {

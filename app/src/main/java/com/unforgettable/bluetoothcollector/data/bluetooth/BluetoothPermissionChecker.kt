@@ -12,14 +12,15 @@ class BluetoothPermissionChecker(
 ) {
     fun currentState(): BluetoothPermissionState {
         val adapter = BluetoothAdapter.getDefaultAdapter()
-        val bluetoothEnabled = when {
-            adapter == null -> false
-            else -> runCatching { adapter.isEnabled }.getOrDefault(true)
+        val (bluetoothEnabled, bluetoothStateTrusted) = when {
+            adapter == null -> false to true
+            else -> runCatching { adapter.isEnabled to true }.getOrElse { false to false }
         }
         return BluetoothPermissionState(
             canDiscover = hasDiscoveryPermission(),
             canConnect = hasConnectPermission(),
             bluetoothEnabled = bluetoothEnabled,
+            bluetoothStateTrusted = bluetoothStateTrusted,
         )
     }
 

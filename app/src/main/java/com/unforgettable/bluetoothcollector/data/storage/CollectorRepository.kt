@@ -19,7 +19,9 @@ class CollectorRepository(
         if (existing != null &&
             existing.instrumentBrand == instrumentBrand &&
             existing.instrumentModel == instrumentModel &&
-            existing.bluetoothDeviceAddress == bluetoothDeviceAddress
+            existing.bluetoothDeviceName == bluetoothDeviceName &&
+            existing.bluetoothDeviceAddress == bluetoothDeviceAddress &&
+            existing.delimiterStrategy == delimiterStrategy
         ) {
             return existing
         }

@@ -78,7 +78,9 @@ class TextStreamRecordParser(
         val parsedCode = cleaned
             .takeIf { it.length > 2 && it[0].isDigit() && it[1].isDigit() }
             ?.take(2)
-        val parsedValue = parsedCode?.let { cleaned.drop(2).takeIf(String::isNotBlank) }
+        val parsedValue = parsedCode
+            ?.let { cleaned.drop(2).trim() }
+            ?.takeIf(String::isNotBlank)
 
         return ParsedIncomingRecord(
             rawPayload = cleaned,

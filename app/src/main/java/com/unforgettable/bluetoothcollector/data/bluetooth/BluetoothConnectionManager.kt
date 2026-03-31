@@ -12,6 +12,7 @@ import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.coroutines.resume
 
 class BluetoothConnectionManager(
@@ -69,8 +70,10 @@ class BluetoothConnectionManager(
                     val newInputStream = newSocket.inputStream
                     if (completed.compareAndSet(false, true)) {
                         if (publishConnectedState(attemptToken, newSocket, newInputStream)) {
-                            if (continuation.isActive) {
-                                continuation.resume(Result.success(Unit))
+                            continuation.resume(Result.success(Unit)) { _, _, _ ->
+                                clearOwnedState(attemptToken)
+                                runCatching { newInputStream.close() }
+                                runCatching { newSocket.close() }
                             }
                         } else {
                             runCatching { newInputStream.close() }
@@ -119,11 +122,16 @@ class BluetoothConnectionManager(
 
     suspend fun drainIncomingBytes(maxBytes: Int = 1024): ByteArray = withContext(Dispatchers.IO) {
         val stream = inputStream ?: return@withContext ByteArray(0)
-        val available = stream.available().coerceAtMost(maxBytes)
-        if (available <= 0) return@withContext ByteArray(0)
-        val buffer = ByteArray(available)
-        val read = stream.read(buffer)
-        if (read <= 0) ByteArray(0) else buffer.copyOf(read)
+        runCatching {
+            val available = stream.available().coerceAtMost(maxBytes)
+            if (available <= 0) {
+                ByteArray(0)
+            } else {
+                val buffer = ByteArray(available)
+                val read = stream.read(buffer)
+                if (read <= 0) ByteArray(0) else buffer.copyOf(read)
+            }
+        }.getOrDefault(ByteArray(0))
     }
 
     fun isConnected(): Boolean = socket?.isConnected == true

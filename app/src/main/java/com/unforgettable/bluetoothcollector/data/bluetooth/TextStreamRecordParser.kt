@@ -61,11 +61,13 @@ class TextStreamRecordParser(
     }
 
     private fun consumeWhitespaceTokens(): List<ParsedIncomingRecord> {
+        val trailingHasWhitespace = buffer.lastOrNull()?.isWhitespace() == true
         val tokens = buffer.split(Regex("\\s+"))
+        val completedTokens = if (trailingHasWhitespace) tokens else tokens.dropLast(1)
+        buffer = if (trailingHasWhitespace) "" else tokens.lastOrNull().orEmpty()
+        return completedTokens
             .filter { it.isNotBlank() }
             .mapNotNull(::toRecordOrNull)
-        buffer = ""
-        return tokens
     }
 
     private fun toRecordOrNull(input: String): ParsedIncomingRecord? {

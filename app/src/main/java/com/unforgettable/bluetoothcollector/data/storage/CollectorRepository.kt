@@ -23,10 +23,13 @@ class CollectorRepository(
         ) {
             return existing
         }
+        if (existing != null) {
+            throw IllegalStateException("current_session_metadata_mismatch_requires_clear")
+        }
 
         val session = SessionEntity(
-            sessionId = existing?.sessionId ?: UUID.randomUUID().toString(),
-            startedAt = existing?.startedAt ?: startedAt,
+            sessionId = UUID.randomUUID().toString(),
+            startedAt = startedAt,
             updatedAt = startedAt,
             instrumentBrand = instrumentBrand,
             instrumentModel = instrumentModel,

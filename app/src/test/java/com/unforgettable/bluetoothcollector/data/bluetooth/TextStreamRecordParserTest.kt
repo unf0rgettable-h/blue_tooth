@@ -26,12 +26,25 @@ class TextStreamRecordParserTest {
         val parser = TextStreamRecordParser()
 
         val result = parser.accept(
-            chunk = "01 123.456 02 234.567",
+            chunk = "01 123.456 02 234.567 ",
             delimiterStrategy = DelimiterStrategy.WHITESPACE_TOKEN,
         )
 
         assertEquals(listOf("01", "123.456", "02", "234.567"), result.completed.map { it.rawPayload })
         assertEquals("", result.remainingBuffer)
+    }
+
+    @Test
+    fun whitespace_token_parser_keeps_trailing_fragment_buffered() {
+        val parser = TextStreamRecordParser()
+
+        val result = parser.accept(
+            chunk = "01 123.456 02 234.567",
+            delimiterStrategy = DelimiterStrategy.WHITESPACE_TOKEN,
+        )
+
+        assertEquals(listOf("01", "123.456", "02"), result.completed.map { it.rawPayload })
+        assertEquals("234.567", result.remainingBuffer)
     }
 
     @Test

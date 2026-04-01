@@ -6,6 +6,7 @@ data class InstrumentModel(
     val displayName: String,
     val delimiterStrategy: DelimiterStrategy,
     val expectedTransport: String = CLASSIC_BLUETOOTH_SPP,
+    val firmwareFamily: String? = null,
 ) {
     companion object {
         const val CLASSIC_BLUETOOTH_SPP = "CLASSIC_BLUETOOTH_SPP"

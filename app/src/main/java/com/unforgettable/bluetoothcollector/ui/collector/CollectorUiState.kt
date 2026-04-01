@@ -1,6 +1,7 @@
 package com.unforgettable.bluetoothcollector.ui.collector
 
 import com.unforgettable.bluetoothcollector.data.bluetooth.BluetoothConnectionState
+import com.unforgettable.bluetoothcollector.data.import_.ImportedFileInfo
 import com.unforgettable.bluetoothcollector.data.instrument.InstrumentCatalog
 import com.unforgettable.bluetoothcollector.domain.model.BondedBluetoothDeviceItem
 import com.unforgettable.bluetoothcollector.domain.model.DiscoveredBluetoothDeviceItem
@@ -32,6 +33,7 @@ data class CollectorUiState(
     val previewRecords: List<MeasurementRecord> = emptyList(),
     val receivedCount: Int = 0,
     val isExportDialogVisible: Boolean = false,
+    val importedFileInfo: ImportedFileInfo? = null,
     val exportFormatOptions: List<ExportFormat> = listOf(ExportFormat.CSV, ExportFormat.TXT),
     val permissionState: CollectorPermissionUiState = CollectorPermissionUiState(),
     val statusMessage: String? = null,
@@ -43,5 +45,5 @@ fun CollectorUiState.filteredModels(): List<InstrumentModel> {
 }
 
 fun CollectorUiState.isSelectionLocked(): Boolean {
-    return currentSession != null || connectionState != BluetoothConnectionState.DISCONNECTED
+    return connectionState != BluetoothConnectionState.DISCONNECTED
 }

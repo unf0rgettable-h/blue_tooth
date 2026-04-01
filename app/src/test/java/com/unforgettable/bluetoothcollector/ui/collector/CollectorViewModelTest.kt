@@ -244,7 +244,7 @@ class CollectorViewModelTest {
     }
 
     @Test
-    fun active_session_locks_brand_model_and_target_selection() = runTest(mainDispatcherRule.dispatcher) {
+    fun active_session_allows_selection_when_disconnected() = runTest(mainDispatcherRule.dispatcher) {
         val viewModel = createViewModel(
             repository = FakeCollectorDataRepository(
                 restoredSession = RestoredCollectorSession(
@@ -258,10 +258,11 @@ class CollectorViewModelTest {
         viewModel.onInstrumentBrandSelected("sokkia")
         viewModel.onInstrumentModelSelected("SX-103")
         viewModel.onTargetDeviceSelected("66:77:88:99:AA:BB")
+        advanceUntilIdle()
 
-        assertEquals("leica", viewModel.uiState.value.selectedBrandId)
-        assertEquals("TS02", viewModel.uiState.value.selectedModelId)
-        assertEquals(sampleBondedDevice().address, viewModel.uiState.value.selectedTargetDeviceAddress)
+        assertEquals("sokkia", viewModel.uiState.value.selectedBrandId)
+        assertEquals("SX-103", viewModel.uiState.value.selectedModelId)
+        assertEquals("66:77:88:99:AA:BB", viewModel.uiState.value.selectedTargetDeviceAddress)
     }
 
     private fun createViewModel(
@@ -274,6 +275,7 @@ class CollectorViewModelTest {
             bluetoothController = bluetooth,
             exportManager = exporter,
             timeProvider = FakeCollectorTimeProvider(),
+            importDirectory = java.io.File(System.getProperty("java.io.tmpdir"), "test-imports"),
             ioDispatcher = mainDispatcherRule.dispatcher,
         )
     }

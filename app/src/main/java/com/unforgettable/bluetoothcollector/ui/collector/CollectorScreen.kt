@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -46,6 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.unforgettable.bluetoothcollector.data.bluetooth.BluetoothConnectionState
+import com.unforgettable.bluetoothcollector.data.import_.ImportedFileInfo
 import com.unforgettable.bluetoothcollector.domain.model.BondedBluetoothDeviceItem
 import com.unforgettable.bluetoothcollector.domain.model.DiscoveredBluetoothDeviceItem
 import com.unforgettable.bluetoothcollector.domain.model.ExportFormat
@@ -76,6 +78,8 @@ fun CollectorScreen(
     onStartReceivingRequested: () -> Unit,
     onStopReceivingRequested: () -> Unit,
     onStartImportRequested: () -> Unit,
+    onShareImportedFile: () -> Unit,
+    onSaveToLocalRequested: () -> Unit,
     onClearRequested: () -> Unit,
     onExportRequested: () -> Unit,
     onExportFormatSelected: (ExportFormat) -> Unit,
@@ -147,7 +151,14 @@ fun CollectorScreen(
                 onStartImportRequested = onStartImportRequested,
                 onClearRequested = onClearRequested,
                 onExportRequested = onExportRequested,
+                onSaveToLocalRequested = onSaveToLocalRequested,
             )
+            uiState.importedFileInfo?.let { fileInfo ->
+                ImportedFilePanel(
+                    fileInfo = fileInfo,
+                    onShareFile = onShareImportedFile,
+                )
+            }
             PreviewPanel(records = uiState.previewRecords)
         }
         if (uiState.isExportDialogVisible) {
@@ -325,10 +336,11 @@ private fun ActionPanel(
     onStartImportRequested: () -> Unit,
     onClearRequested: () -> Unit,
     onExportRequested: () -> Unit,
+    onSaveToLocalRequested: () -> Unit,
 ) {
     PanelCard(
         title = "连接与接收控制",
-        subtitle = "只保留搜索、连接、开始/停止接收、清空与导出。",
+        subtitle = "搜索、连接、接收/导入、清空、导出与保存。",
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilledTonalButton(
@@ -393,6 +405,13 @@ private fun ActionPanel(
                 enabled = uiState.currentSession != null && uiState.previewRecords.isNotEmpty(),
             ) {
                 Text(text = "导出并分享")
+            }
+            OutlinedButton(
+                onClick = onSaveToLocalRequested,
+                enabled = (uiState.currentSession != null && uiState.previewRecords.isNotEmpty()) ||
+                    uiState.importedFileInfo != null,
+            ) {
+                Text(text = "保存到本地")
             }
         }
     }
@@ -626,20 +645,24 @@ private fun PreviewRow(record: MeasurementRecord) {
                 )
             }
             Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = record.rawPayload,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Medium,
-            )
+            SelectionContainer {
+                Text(
+                    text = record.rawPayload,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium,
+                )
+            }
             if (record.parsedCode != null || record.parsedValue != null) {
                 Spacer(modifier = Modifier.height(6.dp))
                 HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.16f))
                 Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = "解析：${record.parsedCode.orEmpty()} ${record.parsedValue.orEmpty()}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                SelectionContainer {
+                    Text(
+                        text = "解析：${record.parsedCode.orEmpty()} ${record.parsedValue.orEmpty()}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }
@@ -676,6 +699,51 @@ private fun StatusChip(label: String) {
             )
         },
     )
+}
+
+@Composable
+private fun ImportedFilePanel(
+    fileInfo: ImportedFileInfo,
+    onShareFile: () -> Unit,
+) {
+    PanelCard(
+        title = "已导入文件",
+        subtitle = "从仪器接收的原始数据文件。",
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Text(
+                    text = fileInfo.file.name,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium,
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "格式：${fileInfo.format.displayName}　大小：${formatFileSize(fileInfo.sizeBytes)}　时间：${fileInfo.receivedAt.take(19)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilledTonalButton(onClick = onShareFile) {
+                        Text(text = "分享文件")
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun formatFileSize(bytes: Long): String {
+    return when {
+        bytes < 1024 -> "${bytes}B"
+        bytes < 1024 * 1024 -> "${bytes / 1024}KB"
+        else -> "${"%.1f".format(bytes / (1024.0 * 1024.0))}MB"
+    }
 }
 
 private fun BluetoothConnectionState.toDisplayText(): String {

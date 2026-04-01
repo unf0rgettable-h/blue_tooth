@@ -45,6 +45,15 @@ sealed interface CollectorUiEvent {
         val file: File,
         val format: ExportFormat,
     ) : CollectorUiEvent
+
+    data class ShareImportedFile(
+        val file: File,
+        val mimeType: String,
+    ) : CollectorUiEvent
+
+    data class SavedToLocal(
+        val fileName: String,
+    ) : CollectorUiEvent
 }
 
 fun interface CollectorTimeProvider {
@@ -120,6 +129,9 @@ class CollectorViewModel(
     private val bluetoothController: CollectorBluetoothController,
     private val exportManager: CollectorExportManager,
     private val timeProvider: CollectorTimeProvider,
+    private val importDirectory: java.io.File,
+    private val downloadsSaver: com.unforgettable.bluetoothcollector.data.share.DownloadsSaver? = null,
+    private val appContext: android.content.Context? = null,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val receiveDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
@@ -304,6 +316,21 @@ class CollectorViewModel(
                 return@launch
             }
 
+            // If switching to a different device, clear old session first.
+            val existingSession = uiState.value.currentSession
+            if (existingSession != null && existingSession.bluetoothDeviceAddress != address) {
+                repository.clearCurrentSession()
+                parser.dropIncompleteFragment()
+                mutableUiState.update {
+                    it.copy(
+                        currentSession = null,
+                        previewRecords = emptyList(),
+                        receivedCount = 0,
+                        importedFileInfo = null,
+                    )
+                }
+            }
+
             mutableUiState.update {
                 it.copy(
                     selectedTargetDeviceAddress = address,
@@ -401,12 +428,11 @@ class CollectorViewModel(
                 return@launch
             }
 
-            val activeSession = ensureActiveSession() ?: return@launch
             mutableUiState.update {
                 it.copy(
-                    currentSession = activeSession,
                     isReceiving = true,
                     isImporting = true,
+                    importedFileInfo = null,
                     statusMessage = null,
                 )
             }
@@ -415,7 +441,7 @@ class CollectorViewModel(
                 return@launch
             }
             receiveJob = CoroutineScope(SupervisorJob() + receiveDispatcher).launch {
-                receiveLoop(activeSession, importMode = true)
+                rawFileReceiveLoop()
             }
         }
     }
@@ -441,6 +467,7 @@ class CollectorViewModel(
                     previewRecords = emptyList(),
                     receivedCount = 0,
                     isExportDialogVisible = false,
+                    importedFileInfo = null,
                     statusMessage = null,
                 )
             }
@@ -607,6 +634,104 @@ class CollectorViewModel(
         }
     }
 
+    private suspend fun rawFileReceiveLoop() {
+        val buffer = java.io.ByteArrayOutputStream()
+        val maxSize = RAW_FILE_MAX_BYTES
+        while (mutableUiState.value.isReceiving &&
+            mutableUiState.value.connectionState == BluetoothConnectionState.CONNECTED
+        ) {
+            val incoming = try {
+                if (buffer.size() > 0) {
+                    bluetoothController.blockingReadBytesWithTimeout(IMPORT_SILENCE_TIMEOUT_MS)
+                        ?: break // silence → transmission complete
+                } else {
+                    bluetoothController.blockingReadBytes() // wait for first byte
+                }
+            } catch (e: java.io.IOException) {
+                cancelIdleDrain()
+                mutableUiState.update {
+                    it.copy(
+                        isReceiving = false,
+                        isImporting = false,
+                        connectionState = BluetoothConnectionState.DISCONNECTED,
+                        statusMessage = "bluetooth_link_lost",
+                    )
+                }
+                return
+            }
+            if (incoming.isNotEmpty()) {
+                buffer.write(incoming)
+                if (buffer.size() > maxSize) {
+                    mutableUiState.update {
+                        it.copy(statusMessage = "import_file_too_large")
+                    }
+                    break
+                }
+            }
+        }
+        val bytes = buffer.toByteArray()
+        if (bytes.isEmpty()) {
+            mutableUiState.update {
+                it.copy(isReceiving = false, isImporting = false, statusMessage = "import_no_data_received")
+            }
+            ensureIdleDrainLoop()
+            return
+        }
+        val header = bytes.copyOf(minOf(bytes.size, 512))
+        val format = com.unforgettable.bluetoothcollector.data.import_.ImportedFileFormat.detect(header)
+        val receivedAt = timeProvider.now()
+        val fileName = "import-${receivedAt.replace(Regex("[^0-9T]"), "")}.${format.extension}"
+        val dir = importDirectory.also { it.mkdirs() }
+        val file = java.io.File(dir, fileName)
+        file.writeBytes(bytes)
+        val info = com.unforgettable.bluetoothcollector.data.import_.ImportedFileInfo(
+            file = file,
+            sizeBytes = bytes.size.toLong(),
+            format = format,
+            receivedAt = receivedAt,
+        )
+        mutableUiState.update {
+            it.copy(
+                isReceiving = false,
+                isImporting = false,
+                importedFileInfo = info,
+                statusMessage = "已导入文件：${format.displayName}（${formatFileSize(bytes.size.toLong())}）",
+            )
+        }
+        ensureIdleDrainLoop()
+    }
+
+    fun onShareImportedFile() {
+        val info = uiState.value.importedFileInfo ?: return
+        mutableEvents.tryEmit(CollectorUiEvent.ShareImportedFile(file = info.file, mimeType = info.format.mimeType))
+    }
+
+    fun onSaveToLocalRequested() {
+        scope.launch {
+            val session = uiState.value.currentSession
+            val records = uiState.value.previewRecords
+            val importedFile = uiState.value.importedFileInfo
+            val ctx = appContext ?: return@launch
+            val saver = downloadsSaver ?: return@launch
+            if (importedFile != null) {
+                saver.saveToDownloads(ctx, importedFile.file, importedFile.format.mimeType)
+                mutableEvents.emit(CollectorUiEvent.SavedToLocal(fileName = importedFile.file.name))
+            } else if (session != null && records.isNotEmpty()) {
+                val exportedFile = exportManager.export(session, records, ExportFormat.CSV)
+                saver.saveToDownloads(ctx, exportedFile, "text/csv")
+                mutableEvents.emit(CollectorUiEvent.SavedToLocal(fileName = exportedFile.name))
+            }
+        }
+    }
+
+    private fun formatFileSize(bytes: Long): String {
+        return when {
+            bytes < 1024 -> "${bytes}B"
+            bytes < 1024 * 1024 -> "${bytes / 1024}KB"
+            else -> "${"%.1f".format(bytes / (1024.0 * 1024.0))}MB"
+        }
+    }
+
     private fun ensureIdleDrainLoop() {
         if (idleDrainJob?.isActive == true) return
         if (mutableUiState.value.connectionState != BluetoothConnectionState.CONNECTED || mutableUiState.value.isReceiving) {
@@ -652,5 +777,6 @@ class CollectorViewModel(
     companion object {
         private const val RECEIVE_IDLE_DELAY_MS = 250L
         private const val IMPORT_SILENCE_TIMEOUT_MS = 3_000L
+        private const val RAW_FILE_MAX_BYTES = 50 * 1024 * 1024 // 50MB
     }
 }

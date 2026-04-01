@@ -6,6 +6,9 @@
     <files-path
         name="files_exports"
         path="exports/" />
+    <files-path
+        name="files_imports"
+        path="imports/" />
     <external-files-path
         name="external_files_exports"
         path="exports/" />

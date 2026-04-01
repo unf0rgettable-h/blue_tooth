@@ -17,13 +17,16 @@ object InstrumentCatalog {
     )
 
     val models: List<InstrumentModel> = listOf(
-        InstrumentModel(modelId = "TS02", brandId = "leica", displayName = "TS02", delimiterStrategy = DelimiterStrategy.LINE_DELIMITED),
-        InstrumentModel(modelId = "TS06", brandId = "leica", displayName = "TS06", delimiterStrategy = DelimiterStrategy.LINE_DELIMITED),
-        InstrumentModel(modelId = "TS09", brandId = "leica", displayName = "TS09", delimiterStrategy = DelimiterStrategy.LINE_DELIMITED),
-        InstrumentModel(modelId = "TS16", brandId = "leica", displayName = "TS16", delimiterStrategy = DelimiterStrategy.LINE_DELIMITED),
-        InstrumentModel(modelId = "TS50", brandId = "leica", displayName = "TS50", delimiterStrategy = DelimiterStrategy.LINE_DELIMITED),
-        InstrumentModel(modelId = "TS60", brandId = "leica", displayName = "TS60", delimiterStrategy = DelimiterStrategy.LINE_DELIMITED),
-        InstrumentModel(modelId = "iCON_iCR80", brandId = "leica", displayName = "iCON iCR80", delimiterStrategy = DelimiterStrategy.LINE_DELIMITED),
+        InstrumentModel(modelId = "TS02", brandId = "leica", displayName = "TS02", delimiterStrategy = DelimiterStrategy.LINE_DELIMITED, firmwareFamily = "FlexLine"),
+        InstrumentModel(modelId = "TS06", brandId = "leica", displayName = "TS06", delimiterStrategy = DelimiterStrategy.LINE_DELIMITED, firmwareFamily = "FlexLine"),
+        InstrumentModel(modelId = "TS07", brandId = "leica", displayName = "TS07", delimiterStrategy = DelimiterStrategy.LINE_DELIMITED, firmwareFamily = "FlexLine"),
+        InstrumentModel(modelId = "TS09", brandId = "leica", displayName = "TS09", delimiterStrategy = DelimiterStrategy.LINE_DELIMITED, firmwareFamily = "FlexLine"),
+        InstrumentModel(modelId = "TS13", brandId = "leica", displayName = "TS13", delimiterStrategy = DelimiterStrategy.LINE_DELIMITED, firmwareFamily = "FlexLine"),
+        InstrumentModel(modelId = "TS16", brandId = "leica", displayName = "TS16", delimiterStrategy = DelimiterStrategy.LINE_DELIMITED, firmwareFamily = "Captivate"),
+        InstrumentModel(modelId = "TS50", brandId = "leica", displayName = "TS50", delimiterStrategy = DelimiterStrategy.LINE_DELIMITED, firmwareFamily = "Captivate"),
+        InstrumentModel(modelId = "TS60", brandId = "leica", displayName = "TS60", delimiterStrategy = DelimiterStrategy.LINE_DELIMITED, firmwareFamily = "Captivate"),
+        InstrumentModel(modelId = "MS60", brandId = "leica", displayName = "MS60 MultiStation", delimiterStrategy = DelimiterStrategy.LINE_DELIMITED, firmwareFamily = "Captivate"),
+        InstrumentModel(modelId = "iCON_iCR80", brandId = "leica", displayName = "iCON iCR80", delimiterStrategy = DelimiterStrategy.LINE_DELIMITED, firmwareFamily = "iCON"),
 
         InstrumentModel(modelId = "SX-103", brandId = "sokkia", displayName = "SX-103", delimiterStrategy = DelimiterStrategy.WHITESPACE_TOKEN),
         InstrumentModel(modelId = "SX-105", brandId = "sokkia", displayName = "SX-105", delimiterStrategy = DelimiterStrategy.WHITESPACE_TOKEN),

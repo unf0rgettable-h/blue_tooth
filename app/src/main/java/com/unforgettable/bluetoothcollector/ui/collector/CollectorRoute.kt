@@ -71,6 +71,9 @@ fun CollectorRoute() {
             bluetoothController = bluetoothController,
             exportManager = dependencies.exportManager,
             timeProvider = dependencies.timeProvider,
+            importDirectory = dependencies.importDirectory,
+            downloadsSaver = dependencies.downloadsSaver,
+            appContext = appContext,
         )
     }
     val viewModel: CollectorViewModel = viewModel(factory = factory)
@@ -116,6 +119,30 @@ fun CollectorRoute() {
                         format = event.format,
                     )
                 }
+                is CollectorUiEvent.ShareImportedFile -> {
+                    val fileUri = androidx.core.content.FileProvider.getUriForFile(
+                        appContext,
+                        "${appContext.packageName}.fileprovider",
+                        event.file,
+                    )
+                    val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                        type = event.mimeType
+                        putExtra(android.content.Intent.EXTRA_STREAM, fileUri)
+                        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    appContext.startActivity(
+                        android.content.Intent.createChooser(shareIntent, null).apply {
+                            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                        },
+                    )
+                }
+                is CollectorUiEvent.SavedToLocal -> {
+                    android.widget.Toast.makeText(
+                        appContext,
+                        "已保存到下载：${event.fileName}",
+                        android.widget.Toast.LENGTH_SHORT,
+                    ).show()
+                }
             }
         }
     }
@@ -151,6 +178,8 @@ fun CollectorRoute() {
         onStartReceivingRequested = viewModel::onStartReceivingRequested,
         onStopReceivingRequested = viewModel::onStopReceivingRequested,
         onStartImportRequested = viewModel::onStartImportRequested,
+        onShareImportedFile = viewModel::onShareImportedFile,
+        onSaveToLocalRequested = viewModel::onSaveToLocalRequested,
         onClearRequested = viewModel::onClearRequested,
         onExportRequested = viewModel::onExportRequested,
         onExportFormatSelected = viewModel::onExportFormatSelected,
@@ -163,6 +192,9 @@ private class CollectorViewModelFactory(
     private val bluetoothController: CollectorBluetoothController,
     private val exportManager: CollectorExportManager,
     private val timeProvider: CollectorTimeProvider,
+    private val importDirectory: File,
+    private val downloadsSaver: com.unforgettable.bluetoothcollector.data.share.DownloadsSaver,
+    private val appContext: Context,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -172,6 +204,9 @@ private class CollectorViewModelFactory(
                 bluetoothController = bluetoothController,
                 exportManager = exportManager,
                 timeProvider = timeProvider,
+                importDirectory = importDirectory,
+                downloadsSaver = downloadsSaver,
+                appContext = appContext,
             ) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
@@ -339,6 +374,8 @@ private data class CollectorAppDependencies(
     val exportManager: CollectorExportManager,
     val shareLauncher: ShareLauncher,
     val timeProvider: CollectorTimeProvider,
+    val importDirectory: File,
+    val downloadsSaver: com.unforgettable.bluetoothcollector.data.share.DownloadsSaver,
 )
 
 private object CollectorAppDependenciesHolder {
@@ -403,6 +440,8 @@ private object CollectorAppDependenciesHolder {
             ),
             shareLauncher = ShareLauncher(),
             timeProvider = timeProvider,
+            importDirectory = File(context.filesDir, "imports"),
+            downloadsSaver = com.unforgettable.bluetoothcollector.data.share.DownloadsSaver(),
         )
     }
 }

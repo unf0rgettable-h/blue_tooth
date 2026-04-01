@@ -111,4 +111,6 @@ Bluetooth disconnect detection uses two redundant mechanisms:
 
 ## License
 
-This project originated as a graduation project (毕业设计) at China University of Geosciences (Wuhan). The legacy MIT App Inventor source is retained for reference only.
+MIT License. See [LICENSE](LICENSE) for details.
+
+Copyright (c) 2026 unf0rgettable

@@ -187,7 +187,7 @@ private fun HeaderBlock(uiState: CollectorUiState) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
-                text = "全站仪蓝牙采集",
+                text = "SurvLink",
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.SemiBold,
             )

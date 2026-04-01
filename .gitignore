@@ -7,3 +7,6 @@ PROJECT.md
 **/build/
 local.properties
 .idea/
+openclaw_research/
+openclaw_workspace_docs/
+create_obsidian_gateway_vault.sh

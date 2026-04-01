@@ -1,4 +1,4 @@
-# Total Station Bluetooth Collector
+# SurvLink
 
 Android app for receiving measurement data from total stations via Bluetooth. Built for surveyors who need a simple, reliable way to get data off their instruments and onto their phones.
 

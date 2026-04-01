@@ -91,7 +91,7 @@
 ### Docs
 
 - Modify: `README.md`
-- Preserve as legacy reference: `src/appinventor/ai_xiakele341/blue_tooth/*`
+- Preserve as legacy reference: `src/appinventor/legacy_app/blue_tooth/*`
 - Preserve as legacy reference: `youngandroidproject/project.properties`
 
 ## Chunk 1: Project Bootstrap And Bluetooth Foundation
@@ -249,7 +249,7 @@ git commit -m "feat: bootstrap native android collector project"
 
 Read the existing reference data from:
 
-- `src/appinventor/ai_xiakele341/blue_tooth/Screen1.bky`
+- `src/appinventor/legacy_app/blue_tooth/Screen1.bky`
 
 Use that to seed the brand/model catalog rather than inventing new values.
 

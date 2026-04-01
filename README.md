@@ -1,162 +1,114 @@
-# 原生 Android 全站仪蓝牙采集
+# Total Station Bluetooth Collector
 
-原仓库是一个 MIT App Inventor 项目，用于全站仪测量数据接收和检定计算。当前主线已经切换为 `Android Studio + Kotlin + Jetpack Compose` 的原生 Android 应用，V1 只保留现场采集真正需要的能力：
+Android app for receiving measurement data from total stations via Bluetooth. Built for surveyors who need a simple, reliable way to get data off their instruments and onto their phones.
 
-- 选择仪器品牌/型号（徕卡 FlexLine/Captivate/iCON 全系、索佳、拓普康、南方、华测、中海达）
-- 搜索附近蓝牙设备
-- 设备配对与已配对设备连接（支持断开后自由切换设备）
-- 经典蓝牙文本流实时接收
-- 仪器存储数据原始文件导入（自动检测 XML/GSI/DXF/CSV/TXT 格式，3 秒静默自动完成）
-- 手机端当前会话持久化与预览（预览文本可选中复制）
-- 当前会话导出为 `CSV` 或 `TXT`
-- 导入的文件可直接分享
-- 通过 Android 系统分享或保存到本地下载目录
+> [Latest Release (v1.2.0)](https://github.com/unf0rgettable-h/blue_tooth/releases/tag/v1.2.0) — download the APK directly
 
-以下旧能力已从原生方案中移除，不再作为产品目标：
+## What it does
 
-- 加常数计算
-- 重复性计算
-- 真值输入
-- 手动补录
-- 文件导入
-- 传统检定报告导出
+Connect your phone to a total station over classic Bluetooth, then:
 
-## 适用对象
+**Real-time collection** — press "Start Receiving" on the phone, take measurements on the instrument, watch data appear live in the preview list.
 
-适合需要继续开发、构建、验证这个原生 Android 采集 App 的开发者。  
-如果你只想查看旧 MIT App Inventor 参考源，请直接看 `src/appinventor/ai_xiakele341/blue_tooth/`。
+**Batch file import** — press "Import Stored Data", trigger an export on the instrument, the phone receives the complete file and auto-detects the format (XML/LandXML, GSI-16, DXF, CSV, TXT). Transmission completes automatically after 3 seconds of silence.
 
-## 当前状态
+**Export & share** — export collected records as CSV or TXT, share via any Android app, or save directly to the Downloads folder.
 
-- 原生 Android 主工程已经可构建
-- 单屏 UI 与状态机已经落地
-- CSV/TXT 导出与系统分享链路已经落地
-- legacy MIT App Inventor 源码仍保留在仓库中，仅作为行为参考
+## Supported instruments
 
-当前环境下已验证：
+| Brand | Models | Firmware | Bluetooth |
+|-------|--------|----------|-----------|
+| Leica | TS02, TS06, TS07, TS09, TS13 | FlexLine | SPP ~15m |
+| Leica | TS16, TS50, TS60 | Captivate | SPP + optional RH16 400m |
+| Leica | MS60 MultiStation | Captivate | SPP + optional RH16 400m |
+| Leica | iCON iCR80 | iCON | SPP + CCD6 400m |
+| Sokkia | SX-103/105/113, CX-101/105, iM-52/105, iX-1003 | — | SPP |
+| Topcon | ES-105/120, MS-05AX, MS1AX, GT-1200 | — | SPP |
+| South | NTS-362R, 552R, NTS-662R, R1-062 | — | SPP |
+| CHC | HTS-221/321/661 | — | SPP |
+| Hi-Target | ZTS-121/221, iTrack-5, iAngle X3 | — | SPP |
 
-- `./gradlew :app:assembleDebug`
-- `./gradlew :app:testDebugUnitTest --tests "*CollectorViewModelTest"`
-- `./gradlew :app:assembleDebugAndroidTest`
+All instruments communicate over classic Bluetooth Serial Port Profile (SPP). Leica instruments use line-delimited output (CR/LF); other brands use whitespace-token parsing.
 
-当前环境下未完成的运行级验证：
+## Quick start
 
-- `./gradlew :app:connectedDebugAndroidTest`
-  原因：没有连接中的 Android 设备或模拟器
+### Install from release
 
-## 技术栈
+Download `app-release-test-signed.apk` from the [Releases](https://github.com/unf0rgettable-h/blue_tooth/releases) page. Enable "Install from unknown sources" on your Android device.
 
-- Kotlin
-- Android Studio / Gradle
-- Jetpack Compose
-- Room
-- Kotlin Coroutines / StateFlow
-- Classic Bluetooth (`BluetoothAdapter`, `BluetoothDevice`, `BluetoothSocket`)
-- FileProvider
+### Build from source
 
-当前 Android 配置：
-
-- `compileSdk = 35`
-- `targetSdk = 35`
-- `minSdk = 26`
-
-## 快速开始
-
-### 1. 环境要求
-
-- JDK 17
-- Android SDK
-- Gradle Wrapper 可用
-
-示例环境变量：
+Requirements: JDK 17, Android SDK (API 35)
 
 ```bash
 export JAVA_HOME=/path/to/jdk-17
 export ANDROID_SDK_ROOT=/path/to/android-sdk
+
+./gradlew :app:assembleDebug          # debug APK
+./gradlew :app:testDebugUnitTest      # run unit tests
 ```
 
-### 2. 构建 Debug APK
+## Usage
 
-```bash
-./gradlew :app:assembleDebug
+1. Open the app, select your instrument brand and model
+2. Turn on Bluetooth, pair with your total station from the "Nearby Devices" section
+3. Select the paired device, tap "Connect"
+4. Choose your workflow:
+   - **Live measurement**: tap "Start Receiving", take measurements on the instrument
+   - **Batch import**: tap "Import Stored Data", trigger data export on the instrument
+5. Preview data appears in real-time; long-press to select and copy text
+6. Tap "Export & Share" to send as CSV/TXT, or "Save to Local" to save to Downloads
+
+## Tech stack
+
+- Kotlin + Jetpack Compose (single-screen UI)
+- Room (session & record persistence)
+- Kotlin Coroutines / StateFlow (reactive state machine)
+- Classic Bluetooth SPP (`BluetoothSocket` blocking read)
+- MediaStore (save to Downloads on API 29+)
+- `compileSdk = 35`, `targetSdk = 35`, `minSdk = 26`
+
+## Project structure
+
+```
+app/src/main/java/com/unforgettable/bluetoothcollector/
+├── data/
+│   ├── bluetooth/       # connection, discovery, pairing, stream parsing
+│   ├── export/          # CSV/TXT export writers
+│   ├── import_/         # raw file reception + format detection
+│   ├── instrument/      # brand/model catalog
+│   ├── share/           # Android share intent + Downloads saver
+│   └── storage/         # Room database (sessions, records)
+├── domain/model/        # Session, MeasurementRecord, InstrumentModel, etc.
+├── ui/collector/        # CollectorScreen, ViewModel, UiState, Route
+└── MainActivity.kt
+
+src/appinventor/         # legacy MIT App Inventor source (reference only)
 ```
 
-### 3. 运行关键验证
+## Architecture
 
-```bash
-./gradlew :app:testDebugUnitTest --tests "*CollectorViewModelTest"
-./gradlew :app:assembleDebugAndroidTest
-```
+Single-activity, single-screen MVVM:
 
-如果你有 Android 12+ 真机或模拟器，再执行：
+- `CollectorViewModel` manages the state machine: connection lifecycle, receive loops, session persistence, export pipeline
+- `CollectorScreen` renders the full UI from `CollectorUiState` via Compose
+- `CollectorRoute` wires dependencies (Bluetooth controller, Room DB, export manager)
+- Two independent receive paths:
+  - **Live mode**: `blockingReadBytes()` → `TextStreamRecordParser` → `MeasurementRecord` → Room DB
+  - **Import mode**: `rawFileReceiveLoop()` → `ByteArrayOutputStream` → file with auto-detected format
 
-```bash
-./gradlew :app:connectedDebugAndroidTest
-```
+Bluetooth disconnect detection uses two redundant mechanisms:
+1. `ACTION_ACL_DISCONNECTED` broadcast receiver
+2. `IOException` catch in the blocking read loop
 
-## 目录结构
+## Version history
 
-```text
-app/                                      原生 Android 主工程
-  src/main/java/com/unforgettable/
-    bluetoothcollector/
-      data/                               蓝牙、存储、导出、分享
-      domain/                             领域模型
-      ui/                                 单屏 UI、状态机、主题
+| Version | Date | Changes |
+|---------|------|---------|
+| v1.2.0 | 2026-04-01 | Device selection unlock, raw file import, text copy, save to local, catalog update |
+| v1.1.0 | 2026-03-31 | Bluetooth receive fix, disconnect detection, batch import mode |
+| v1.0.0 | 2026-03-31 | Initial native Android release (Task 1-8 complete) |
 
-  src/test/                               JVM 单测
-  src/androidTest/                        Compose / Android instrumentation tests
+## License
 
-docs/superpowers/specs/                   原生方案设计文档
-docs/superpowers/plans/                   原生方案实施计划
-
-src/appinventor/ai_xiakele341/blue_tooth/ legacy MIT App Inventor 源码参考
-youngandroidproject/                      legacy App Inventor 项目元数据
-assets/                                   legacy 资源
-```
-
-## 单屏 UI 说明
-
-当前界面收敛为一个主屏：
-
-- 左上：仪器品牌与型号选择
-- 右上：附近设备与已配对设备
-- 中部：搜索、连接、开始/停止接收、清空、导出
-- 下部：连接状态、接收状态、接收条数、当前会话预览列表
-
-导出流程：
-
-1. 当前会话在手机端持久化
-2. 用户点击导出
-3. 选择 `CSV` 或 `TXT`
-4. 应用在手机端生成文件
-5. 调起 Android 系统分享面板
-
-## 关键行为约束
-
-- 只允许连接已配对设备
-- 蓝牙搜索与连接互斥
-- 当前会话可在应用重启后恢复数据
-- 应用重启后不会恢复“已连接”或“接收中”状态
-- 清空当前会话仅允许在断开状态下执行
-- 导出范围仅限当前会话
-
-## 旧 MIT 源码的定位
-
-旧 MIT App Inventor 源码仍保留，但它的角色已经变成：
-
-- 仪器品牌/型号目录参考
-- 旧蓝牙链路行为参考
-- 遗留产品形态参考
-
-它不再代表当前主产品架构，也不再是推荐的继续开发入口。
-
-## 相关文档
-
-- 设计文档：`docs/superpowers/specs/2026-03-25-android-native-total-station-collector-design.md`
-- 实施计划：`docs/superpowers/plans/2026-03-30-native-android-total-station-collector.md`
-
-## 当前已知限制
-
-- 当前仓库环境没有可用 Android 设备或模拟器，`connectedDebugAndroidTest` 无法在本地完成
-- 蓝牙搜索、系统配对、真实接收链路、系统分享面板，仍需要在 Android 12+ 真机或模拟器上做最终人工验收
+This project originated as a graduation project (毕业设计) at China University of Geosciences (Wuhan). The legacy MIT App Inventor source is retained for reference only.

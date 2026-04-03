@@ -2,7 +2,7 @@
 
 Android app for receiving measurement data from total stations via Bluetooth. Built for surveyors who need a simple, reliable way to get data off their instruments and onto their phones.
 
-> [Latest Release (v1.2.0)](https://github.com/unf0rgettable-h/blue_tooth/releases/tag/v1.2.0) — download the APK directly
+> Latest release target: `v1.3.0`
 
 ## What it does
 
@@ -10,7 +10,7 @@ Connect your phone to a total station over classic Bluetooth, then:
 
 **Real-time collection** — press "Start Receiving" on the phone, take measurements on the instrument, watch data appear live in the preview list.
 
-**Batch file import** — press "Import Stored Data", trigger an export on the instrument, the phone receives the complete file and auto-detects the format (XML/LandXML, GSI-16, DXF, CSV, TXT). Transmission completes automatically after 3 seconds of silence.
+**Batch file import** — use the Data page to enter the model-aware import flow. TS09 keeps the current whole-file import path. TS60 currently routes to guidance/limitations instead of pretending the TS09 path is guaranteed to work.
 
 **Export & share** — export collected records as CSV or TXT, share via any Android app, or save directly to the Downloads folder.
 
@@ -29,6 +29,13 @@ Connect your phone to a total station over classic Bluetooth, then:
 | Hi-Target | ZTS-121/221, iTrack-5, iAngle X3 | — | SPP |
 
 All instruments communicate over classic Bluetooth Serial Port Profile (SPP). Leica instruments use line-delimited output (CR/LF); other brands use whitespace-token parsing.
+
+## Current support notes
+
+- **Live receive:** supported for the current collector workflow, with preview rows remaining selectable/copyable
+- **TS09 batch import:** supported through the in-app import flow
+- **TS60 batch import:** not treated as identical to TS09; the app now surfaces model-aware guidance instead of assuming the same ASCII/RS232 export path always works
+- **UI layout:** the app now separates Bluetooth setup and Data actions into two bottom-navigation pages to reduce crowding on smaller phones
 
 ## Quick start
 
@@ -50,18 +57,19 @@ export ANDROID_SDK_ROOT=/path/to/android-sdk
 
 ## Usage
 
-1. Open the app, select your instrument brand and model
-2. Turn on Bluetooth, pair with your total station from the "Nearby Devices" section
-3. Select the paired device, tap "Connect"
-4. Choose your workflow:
-   - **Live measurement**: tap "Start Receiving", take measurements on the instrument
-   - **Batch import**: tap "Import Stored Data", trigger data export on the instrument
-5. Preview data appears in real-time; long-press to select and copy text
-6. Tap "Export & Share" to send as CSV/TXT, or "Save to Local" to save to Downloads
+1. Open the app and go to the `蓝牙` page
+2. Select your instrument brand and model
+3. Turn on Bluetooth, pair with your total station from the nearby devices section if needed
+4. Select the paired device, tap `连接`, and use `断开` from the same page when needed
+5. Go to the `数据` page and choose your workflow:
+   - **Live measurement**: tap `开始接收`, take measurements on the instrument
+   - **Batch import**: use the model-aware import action shown for the selected instrument
+6. Preview data appears in real time; preview text remains selectable/copyable
+7. Use `导出并分享` for session records, or `分享文件` / `保存到本地` for imported-file artifacts
 
 ## Tech stack
 
-- Kotlin + Jetpack Compose (single-screen UI)
+- Kotlin + Jetpack Compose (two-page bottom-navigation UI)
 - Room (session & record persistence)
 - Kotlin Coroutines / StateFlow (reactive state machine)
 - Classic Bluetooth SPP (`BluetoothSocket` blocking read)
@@ -88,10 +96,10 @@ src/appinventor/         # legacy MIT App Inventor source (reference only)
 
 ## Architecture
 
-Single-activity, single-screen MVVM:
+Single-activity, two-page MVVM:
 
-- `CollectorViewModel` manages the state machine: connection lifecycle, receive loops, session persistence, export pipeline
-- `CollectorScreen` renders the full UI from `CollectorUiState` via Compose
+- `CollectorViewModel` manages the state machine: connection lifecycle, live receive, import guidance, session persistence, export pipeline
+- `CollectorScreen` renders the Bluetooth page and Data page from `CollectorUiState`
 - `CollectorRoute` wires dependencies (Bluetooth controller, Room DB, export manager)
 - Two independent receive paths:
   - **Live mode**: `blockingReadBytes()` → `TextStreamRecordParser` → `MeasurementRecord` → Room DB
@@ -105,6 +113,7 @@ Bluetooth disconnect detection uses two redundant mechanisms:
 
 | Version | Date | Changes |
 |---------|------|---------|
+| v1.3.0 | 2026-04-03 | Split Bluetooth/Data pages, persistent import file panel, selection/session locking fix, TS60 import guidance branch |
 | v1.2.0 | 2026-04-01 | Device selection unlock, raw file import, text copy, save to local, catalog update |
 | v1.1.0 | 2026-03-31 | Bluetooth receive fix, disconnect detection, batch import mode |
 | v1.0.0 | 2026-03-31 | Initial native Android release (Task 1-8 complete) |

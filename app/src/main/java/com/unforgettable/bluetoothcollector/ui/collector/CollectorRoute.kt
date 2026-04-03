@@ -1,5 +1,6 @@
 package com.unforgettable.bluetoothcollector.ui.collector
 
+import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.content.BroadcastReceiver
@@ -29,6 +30,7 @@ import com.unforgettable.bluetoothcollector.data.bluetooth.BondedDeviceManager
 import com.unforgettable.bluetoothcollector.data.bluetooth.PairingRequestCoordinator
 import com.unforgettable.bluetoothcollector.data.export.CsvExportWriter
 import com.unforgettable.bluetoothcollector.data.export.TxtExportWriter
+import com.unforgettable.bluetoothcollector.data.import_.ImportedArtifactStore
 import com.unforgettable.bluetoothcollector.data.share.ShareLauncher
 import com.unforgettable.bluetoothcollector.data.storage.AppDatabase
 import com.unforgettable.bluetoothcollector.data.storage.CollectorRepository
@@ -72,6 +74,7 @@ fun CollectorRoute() {
             exportManager = dependencies.exportManager,
             timeProvider = dependencies.timeProvider,
             importDirectory = dependencies.importDirectory,
+            importedArtifactStore = dependencies.importedArtifactStore,
             downloadsSaver = dependencies.downloadsSaver,
             appContext = appContext,
         )
@@ -193,6 +196,7 @@ private class CollectorViewModelFactory(
     private val exportManager: CollectorExportManager,
     private val timeProvider: CollectorTimeProvider,
     private val importDirectory: File,
+    private val importedArtifactStore: ImportedArtifactStore,
     private val downloadsSaver: com.unforgettable.bluetoothcollector.data.share.DownloadsSaver,
     private val appContext: Context,
 ) : ViewModelProvider.Factory {
@@ -205,6 +209,7 @@ private class CollectorViewModelFactory(
                 exportManager = exportManager,
                 timeProvider = timeProvider,
                 importDirectory = importDirectory,
+                importedArtifactStore = importedArtifactStore,
                 downloadsSaver = downloadsSaver,
                 appContext = appContext,
             ) as T
@@ -315,6 +320,7 @@ private class AndroidCollectorBluetoothController(
 
     override suspend fun cancelDiscovery(): Boolean = discoveryManager.cancelDiscovery()
 
+    @SuppressLint("MissingPermission")
     override suspend fun connect(
         address: String,
         currentSessionDeviceAddress: String?,
@@ -375,6 +381,7 @@ private data class CollectorAppDependencies(
     val shareLauncher: ShareLauncher,
     val timeProvider: CollectorTimeProvider,
     val importDirectory: File,
+    val importedArtifactStore: ImportedArtifactStore,
     val downloadsSaver: com.unforgettable.bluetoothcollector.data.share.DownloadsSaver,
 )
 
@@ -441,6 +448,7 @@ private object CollectorAppDependenciesHolder {
             shareLauncher = ShareLauncher(),
             timeProvider = timeProvider,
             importDirectory = File(context.filesDir, "imports"),
+            importedArtifactStore = ImportedArtifactStore(File(context.filesDir, "imports")),
             downloadsSaver = com.unforgettable.bluetoothcollector.data.share.DownloadsSaver(),
         )
     }

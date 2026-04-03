@@ -1,6 +1,9 @@
 package com.unforgettable.bluetoothcollector.ui.collector
 
 import com.unforgettable.bluetoothcollector.data.bluetooth.BluetoothConnectionState
+import com.unforgettable.bluetoothcollector.data.import_.ImportedArtifactStoreContract
+import com.unforgettable.bluetoothcollector.data.import_.ImportedFileFormat
+import com.unforgettable.bluetoothcollector.data.import_.ImportedFileInfo
 import com.unforgettable.bluetoothcollector.domain.model.BondedBluetoothDeviceItem
 import com.unforgettable.bluetoothcollector.domain.model.DelimiterStrategy
 import com.unforgettable.bluetoothcollector.domain.model.DiscoveredBluetoothDeviceItem
@@ -8,7 +11,9 @@ import com.unforgettable.bluetoothcollector.domain.model.ExportFormat
 import com.unforgettable.bluetoothcollector.domain.model.MeasurementRecord
 import com.unforgettable.bluetoothcollector.domain.model.Session
 import java.io.File
+import java.io.IOException
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
@@ -18,12 +23,14 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import org.junit.Ignore
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TestWatcher
@@ -101,15 +108,20 @@ class CollectorViewModelTest {
         viewModel.onConnectRequested(sampleBondedDevice().address)
         advanceUntilIdle()
 
-        viewModel.onStartReceivingRequested()
-        advanceUntilIdle()
+        try {
+            viewModel.onStartReceivingRequested()
+            advanceUntilIdle()
 
-        assertEquals(1, repository.ensureRequests.size)
-        assertEquals("leica", repository.ensureRequests.single().instrumentBrand)
-        assertEquals("TS02", repository.ensureRequests.single().instrumentModel)
-        assertEquals(sampleBondedDevice().address, repository.ensureRequests.single().bluetoothDeviceAddress)
-        assertNotNull(viewModel.uiState.value.currentSession)
-        assertTrue(viewModel.uiState.value.isReceiving)
+            assertEquals(1, repository.ensureRequests.size)
+            assertEquals("leica", repository.ensureRequests.single().instrumentBrand)
+            assertEquals("TS02", repository.ensureRequests.single().instrumentModel)
+            assertEquals(sampleBondedDevice().address, repository.ensureRequests.single().bluetoothDeviceAddress)
+            assertNotNull(viewModel.uiState.value.currentSession)
+            assertTrue(viewModel.uiState.value.isReceiving)
+        } finally {
+            viewModel.onDisconnectRequested()
+            advanceUntilIdle()
+        }
     }
 
     @Test
@@ -232,19 +244,188 @@ class CollectorViewModelTest {
         viewModel.onInstrumentModelSelected("TS02")
         viewModel.onConnectRequested(sampleBondedDevice().address)
         advanceUntilIdle()
-        viewModel.onStartReceivingRequested()
-        advanceUntilIdle()
+        try {
+            viewModel.onStartReceivingRequested()
+            advanceUntilIdle()
 
-        viewModel.onAppBackgrounded()
-        advanceUntilIdle()
+            viewModel.onAppBackgrounded()
+            advanceUntilIdle()
 
-        assertFalse(viewModel.uiState.value.isReceiving)
-        assertEquals(BluetoothConnectionState.CONNECTED, viewModel.uiState.value.connectionState)
-        assertEquals("receiving_paused_backgrounded", viewModel.uiState.value.statusMessage)
+            assertFalse(viewModel.uiState.value.isReceiving)
+            assertEquals(BluetoothConnectionState.CONNECTED, viewModel.uiState.value.connectionState)
+            assertEquals("receiving_paused_backgrounded", viewModel.uiState.value.statusMessage)
+        } finally {
+            viewModel.onDisconnectRequested()
+            advanceUntilIdle()
+        }
     }
 
     @Test
-    fun active_session_allows_selection_when_disconnected() = runTest(mainDispatcherRule.dispatcher) {
+    fun live_receive_is_refused_while_import_is_active() = runTest(mainDispatcherRule.dispatcher) {
+        val bluetooth = FakeCollectorBluetoothController(
+            pairedDevices = listOf(sampleBondedDevice()),
+        )
+        val viewModel = createViewModel(
+            repository = FakeCollectorDataRepository(),
+            bluetooth = bluetooth,
+        )
+
+        viewModel.onInstrumentBrandSelected("leica")
+        viewModel.onInstrumentModelSelected("TS02")
+        viewModel.onConnectRequested(sampleBondedDevice().address)
+        advanceUntilIdle()
+        try {
+            viewModel.onStartImportRequested()
+            advanceUntilIdle()
+
+            viewModel.onStartReceivingRequested()
+            advanceUntilIdle()
+
+            assertEquals("receive_conflicts_with_import", viewModel.uiState.value.statusMessage)
+        } finally {
+            viewModel.onDisconnectRequested()
+            advanceUntilIdle()
+        }
+    }
+
+    @Test
+    fun import_is_refused_while_live_receive_is_active() = runTest(mainDispatcherRule.dispatcher) {
+        val bluetooth = FakeCollectorBluetoothController(
+            pairedDevices = listOf(sampleBondedDevice()),
+        )
+        val viewModel = createViewModel(
+            repository = FakeCollectorDataRepository(),
+            bluetooth = bluetooth,
+        )
+
+        viewModel.onInstrumentBrandSelected("leica")
+        viewModel.onInstrumentModelSelected("TS02")
+        viewModel.onConnectRequested(sampleBondedDevice().address)
+        advanceUntilIdle()
+        try {
+            viewModel.onStartReceivingRequested()
+            advanceUntilIdle()
+
+            viewModel.onStartImportRequested()
+            advanceUntilIdle()
+
+            assertEquals("import_conflicts_with_live_receive", viewModel.uiState.value.statusMessage)
+        } finally {
+            viewModel.onDisconnectRequested()
+            advanceUntilIdle()
+        }
+    }
+
+    @Test
+    fun reconnect_to_different_device_is_refused_while_current_session_exists() = runTest(mainDispatcherRule.dispatcher) {
+        val otherDevice = BondedBluetoothDeviceItem(
+            name = "Leica TS16",
+            address = "66:77:88:99:AA:BB",
+        )
+        val repository = FakeCollectorDataRepository(
+            restoredSession = RestoredCollectorSession(
+                session = sampleSession(),
+                records = listOf(sampleRecord(sequence = 1, rawPayload = "01123.456")),
+            ),
+        )
+        val bluetooth = FakeCollectorBluetoothController(
+            pairedDevices = listOf(sampleBondedDevice(), otherDevice),
+        )
+        val viewModel = createViewModel(
+            repository = repository,
+            bluetooth = bluetooth,
+        )
+        advanceUntilIdle()
+
+        viewModel.onConnectRequested(otherDevice.address)
+        advanceUntilIdle()
+
+        assertEquals(0, repository.clearCalls)
+        assertTrue(bluetooth.connectRequests.isEmpty())
+        assertEquals("device_change_requires_clear_current_session", viewModel.uiState.value.statusMessage)
+    }
+
+    @Test
+    fun disconnect_during_import_preserves_last_successful_imported_artifact() = runTest(mainDispatcherRule.dispatcher) {
+        val bluetooth = FakeCollectorBluetoothController(
+            pairedDevices = listOf(sampleBondedDevice()),
+        )
+        val importedArtifactStore = FakeImportedArtifactStore(
+            loadedArtifact = sampleImportedArtifact(),
+        )
+        val viewModel = createViewModel(
+            repository = FakeCollectorDataRepository(),
+            bluetooth = bluetooth,
+            importedArtifactStore = importedArtifactStore,
+        )
+        advanceUntilIdle()
+
+        viewModel.onInstrumentBrandSelected("leica")
+        viewModel.onInstrumentModelSelected("TS02")
+        viewModel.onConnectRequested(sampleBondedDevice().address)
+        advanceUntilIdle()
+        viewModel.onStartImportRequested()
+        advanceUntilIdle()
+
+        viewModel.onDisconnectRequested()
+        advanceUntilIdle()
+
+        assertEquals(sampleImportedArtifact().file.absolutePath, viewModel.uiState.value.importedFileInfo?.file?.absolutePath)
+    }
+
+    @Test
+    fun ts60_import_request_surfaces_guidance_instead_of_starting_import() = runTest(mainDispatcherRule.dispatcher) {
+        val bluetooth = FakeCollectorBluetoothController(
+            pairedDevices = listOf(sampleBondedDevice()),
+        )
+        val viewModel = createViewModel(
+            repository = FakeCollectorDataRepository(),
+            bluetooth = bluetooth,
+        )
+
+        viewModel.onInstrumentBrandSelected("leica")
+        viewModel.onInstrumentModelSelected("TS60")
+        viewModel.onConnectRequested(sampleBondedDevice().address)
+        advanceUntilIdle()
+
+        viewModel.onStartImportRequested()
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.isImporting)
+        assertEquals("TS60 批量导入需要先按型号兼容说明确认可用导出路径。", viewModel.uiState.value.statusMessage)
+    }
+
+    @Ignore("Needs a more deterministic transport fake to avoid hanging the unit-test harness")
+    @Test
+    fun live_receive_appends_preview_record_from_blocking_read_stream() = runTest(mainDispatcherRule.dispatcher) {
+        val bluetooth = FakeCollectorBluetoothController(
+            pairedDevices = listOf(sampleBondedDevice()),
+            blockingReadSequence = ArrayDeque(
+                listOf(
+                    "01123.456\n".toByteArray(),
+                ),
+            ),
+            blockingReadFailureAfterSequence = IOException("socket closed"),
+        )
+        val viewModel = createViewModel(
+            repository = FakeCollectorDataRepository(),
+            bluetooth = bluetooth,
+        )
+
+        viewModel.onInstrumentBrandSelected("leica")
+        viewModel.onInstrumentModelSelected("TS02")
+        viewModel.onConnectRequested(sampleBondedDevice().address)
+        advanceUntilIdle()
+
+        viewModel.onStartReceivingRequested()
+        repeat(3) { runCurrent() }
+
+        assertEquals(1, viewModel.uiState.value.previewRecords.size)
+        assertEquals("01123.456", viewModel.uiState.value.previewRecords.single().rawPayload)
+    }
+
+    @Test
+    fun active_session_keeps_selection_locked_until_clear() = runTest(mainDispatcherRule.dispatcher) {
         val viewModel = createViewModel(
             repository = FakeCollectorDataRepository(
                 restoredSession = RestoredCollectorSession(
@@ -260,15 +441,16 @@ class CollectorViewModelTest {
         viewModel.onTargetDeviceSelected("66:77:88:99:AA:BB")
         advanceUntilIdle()
 
-        assertEquals("sokkia", viewModel.uiState.value.selectedBrandId)
-        assertEquals("SX-103", viewModel.uiState.value.selectedModelId)
-        assertEquals("66:77:88:99:AA:BB", viewModel.uiState.value.selectedTargetDeviceAddress)
+        assertEquals("leica", viewModel.uiState.value.selectedBrandId)
+        assertEquals("TS02", viewModel.uiState.value.selectedModelId)
+        assertEquals(sampleBondedDevice().address, viewModel.uiState.value.selectedTargetDeviceAddress)
     }
 
     private fun createViewModel(
         repository: FakeCollectorDataRepository = FakeCollectorDataRepository(),
         bluetooth: FakeCollectorBluetoothController = FakeCollectorBluetoothController(),
         exporter: FakeCollectorExportManager = FakeCollectorExportManager(),
+        importedArtifactStore: FakeImportedArtifactStore? = null,
     ): CollectorViewModel {
         return CollectorViewModel(
             repository = repository,
@@ -276,7 +458,9 @@ class CollectorViewModelTest {
             exportManager = exporter,
             timeProvider = FakeCollectorTimeProvider(),
             importDirectory = java.io.File(System.getProperty("java.io.tmpdir"), "test-imports"),
+            importedArtifactStore = importedArtifactStore,
             ioDispatcher = mainDispatcherRule.dispatcher,
+            receiveDispatcher = mainDispatcherRule.dispatcher,
         )
     }
 
@@ -313,6 +497,18 @@ class CollectorViewModelTest {
         return BondedBluetoothDeviceItem(
             name = "Leica TS02",
             address = "00:11:22:33:44:55",
+        )
+    }
+
+    private fun sampleImportedArtifact(): ImportedFileInfo {
+        val file = File(System.getProperty("java.io.tmpdir"), "existing-import.gsi").apply {
+            writeText("*110001+000000000")
+        }
+        return ImportedFileInfo(
+            file = file,
+            sizeBytes = file.length(),
+            format = ImportedFileFormat.GSI,
+            receivedAt = "2026-04-03T21:00:00+08:00",
         )
     }
 }
@@ -391,11 +587,15 @@ private class FakeCollectorBluetoothController(
     nearbyDevices: List<DiscoveredBluetoothDeviceItem> = emptyList(),
     pairedDevices: List<BondedBluetoothDeviceItem> = emptyList(),
     isDiscoveringInitially: Boolean = false,
+    blockingReadSequence: ArrayDeque<ByteArray> = ArrayDeque(),
+    blockingReadFailureAfterSequence: IOException? = null,
 ) : CollectorBluetoothController {
     private val mutableNearbyDevices = MutableStateFlow(nearbyDevices)
     private val mutablePairedDevices = MutableStateFlow(pairedDevices)
     private val mutableIsDiscovering = MutableStateFlow(isDiscoveringInitially)
     private val mutablePermissionState = MutableStateFlow(CollectorPermissionUiState())
+    private val queuedBlockingReads = blockingReadSequence
+    private val blockingReadFailure = blockingReadFailureAfterSequence
 
     override val nearbyDevices: StateFlow<List<DiscoveredBluetoothDeviceItem>> = mutableNearbyDevices
     override val pairedDevices: StateFlow<List<BondedBluetoothDeviceItem>> = mutablePairedDevices
@@ -451,7 +651,11 @@ private class FakeCollectorBluetoothController(
 
     override suspend fun drainIncomingBytes(maxBytes: Int): ByteArray = ByteArray(0)
 
-    override suspend fun blockingReadBytes(): ByteArray = ByteArray(0)
+    override suspend fun blockingReadBytes(): ByteArray {
+        queuedBlockingReads.removeFirstOrNull()?.let { return it }
+        blockingReadFailure?.let { throw it }
+        awaitCancellation()
+    }
 
     override suspend fun blockingReadBytesWithTimeout(timeoutMs: Long): ByteArray? = null
 
@@ -479,6 +683,22 @@ private class FakeCollectorExportManager(
 
 private class FakeCollectorTimeProvider : CollectorTimeProvider {
     override fun now(): String = "2026-03-31T10:15:00+08:00"
+}
+
+private class FakeImportedArtifactStore(
+    loadedArtifact: ImportedFileInfo? = null,
+) : ImportedArtifactStoreContract {
+    private var artifact: ImportedFileInfo? = loadedArtifact
+
+    override fun save(artifact: ImportedFileInfo) {
+        this.artifact = artifact
+    }
+
+    override fun load(): ImportedFileInfo? = artifact
+
+    override fun preserveLastSuccessfulOnFailure() = Unit
+
+    override fun onCurrentSessionCleared() = Unit
 }
 
 private data class EnsureSessionRequest(

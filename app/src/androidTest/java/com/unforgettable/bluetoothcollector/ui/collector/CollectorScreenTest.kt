@@ -5,6 +5,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import com.unforgettable.bluetoothcollector.data.bluetooth.BluetoothConnectionState
 import com.unforgettable.bluetoothcollector.domain.model.BondedBluetoothDeviceItem
 import com.unforgettable.bluetoothcollector.domain.model.DelimiterStrategy
@@ -39,6 +40,9 @@ class CollectorScreenTest {
                     onDisconnectRequested = {},
                     onStartReceivingRequested = {},
                     onStopReceivingRequested = {},
+                    onStartImportRequested = {},
+                    onShareImportedFile = {},
+                    onSaveToLocalRequested = {},
                     onClearRequested = {},
                     onExportRequested = {},
                     onExportFormatSelected = {},
@@ -67,6 +71,9 @@ class CollectorScreenTest {
                     onDisconnectRequested = {},
                     onStartReceivingRequested = {},
                     onStopReceivingRequested = {},
+                    onStartImportRequested = {},
+                    onShareImportedFile = {},
+                    onSaveToLocalRequested = {},
                     onClearRequested = {},
                     onExportRequested = {},
                     onExportFormatSelected = {},
@@ -77,6 +84,74 @@ class CollectorScreenTest {
 
         composeRule.onNodeWithText("连接 未连接").assertIsDisplayed()
         composeRule.onNodeWithText("01123.456").assertIsDisplayed()
+    }
+
+    @Test
+    fun bottom_navigation_switches_between_bluetooth_and_data_pages() {
+        composeRule.setContent {
+            CollectorTheme {
+                CollectorScreen(
+                    uiState = sampleUiState(),
+                    onInstrumentBrandSelected = {},
+                    onInstrumentModelSelected = {},
+                    onTargetDeviceSelected = {},
+                    onDiscoveryRequested = {},
+                    onStopDiscoveryRequested = {},
+                    onPairDeviceRequested = {},
+                    onConnectRequested = {},
+                    onDisconnectRequested = {},
+                    onStartReceivingRequested = {},
+                    onStopReceivingRequested = {},
+                    onStartImportRequested = {},
+                    onShareImportedFile = {},
+                    onSaveToLocalRequested = {},
+                    onClearRequested = {},
+                    onExportRequested = {},
+                    onExportFormatSelected = {},
+                    onDismissExportDialog = {},
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag(CollectorScreenTags.BottomNavBluetooth).assertIsDisplayed()
+        composeRule.onNodeWithTag(CollectorScreenTags.BottomNavData).assertIsDisplayed()
+        composeRule.onNodeWithTag(CollectorScreenTags.NearbySection).assertIsDisplayed()
+
+        composeRule.onNodeWithTag(CollectorScreenTags.BottomNavData).performClick()
+
+        composeRule.onNodeWithTag(CollectorScreenTags.PreviewSection).assertIsDisplayed()
+    }
+
+    @Test
+    fun imported_file_panel_is_visible_even_when_empty() {
+        composeRule.setContent {
+            CollectorTheme {
+                CollectorScreen(
+                    uiState = sampleUiState(),
+                    onInstrumentBrandSelected = {},
+                    onInstrumentModelSelected = {},
+                    onTargetDeviceSelected = {},
+                    onDiscoveryRequested = {},
+                    onStopDiscoveryRequested = {},
+                    onPairDeviceRequested = {},
+                    onConnectRequested = {},
+                    onDisconnectRequested = {},
+                    onStartReceivingRequested = {},
+                    onStopReceivingRequested = {},
+                    onStartImportRequested = {},
+                    onShareImportedFile = {},
+                    onSaveToLocalRequested = {},
+                    onClearRequested = {},
+                    onExportRequested = {},
+                    onExportFormatSelected = {},
+                    onDismissExportDialog = {},
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag(CollectorScreenTags.BottomNavData).performClick()
+        composeRule.onNodeWithTag(CollectorScreenTags.ImportedFilePanel).assertIsDisplayed()
+        composeRule.onNodeWithText("暂无导入文件").assertIsDisplayed()
     }
 
     private fun sampleUiState(): CollectorUiState {

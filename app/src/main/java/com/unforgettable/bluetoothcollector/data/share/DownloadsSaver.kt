@@ -1,5 +1,6 @@
 package com.unforgettable.bluetoothcollector.data.share
 
+import androidx.annotation.RequiresApi
 import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
@@ -18,6 +19,7 @@ class DownloadsSaver {
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.Q)
     private fun saveViaMediaStore(context: Context, sourceFile: File, mimeType: String): Uri? {
         val values = ContentValues().apply {
             put(MediaStore.Downloads.DISPLAY_NAME, sourceFile.name)

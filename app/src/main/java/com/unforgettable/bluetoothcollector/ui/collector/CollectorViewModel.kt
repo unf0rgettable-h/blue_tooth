@@ -2,6 +2,8 @@ package com.unforgettable.bluetoothcollector.ui.collector
 
 import androidx.lifecycle.ViewModel
 import com.unforgettable.bluetoothcollector.data.bluetooth.BluetoothConnectionState
+import com.unforgettable.bluetoothcollector.data.import_.ImportedArtifactStoreContract
+import com.unforgettable.bluetoothcollector.data.import_.ImportProfileVerdict
 import com.unforgettable.bluetoothcollector.data.bluetooth.TextStreamRecordParser
 import com.unforgettable.bluetoothcollector.data.instrument.InstrumentCatalog
 import com.unforgettable.bluetoothcollector.domain.model.BondedBluetoothDeviceItem
@@ -130,6 +132,7 @@ class CollectorViewModel(
     private val exportManager: CollectorExportManager,
     private val timeProvider: CollectorTimeProvider,
     private val importDirectory: java.io.File,
+    private val importedArtifactStore: ImportedArtifactStoreContract? = null,
     private val downloadsSaver: com.unforgettable.bluetoothcollector.data.share.DownloadsSaver? = null,
     private val appContext: android.content.Context? = null,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
@@ -150,6 +153,9 @@ class CollectorViewModel(
     val events: Flow<CollectorUiEvent> = mutableEvents.asSharedFlow()
 
     init {
+        importedArtifactStore?.load()?.let { importedArtifact ->
+            mutableUiState.update { it.copy(importedFileInfo = importedArtifact) }
+        }
         bluetoothController.refreshPermissionState()
         scope.launch {
             bluetoothController.refreshPairedDevices()
@@ -193,6 +199,7 @@ class CollectorViewModel(
                         }
                     }
                     CollectorBluetoothControllerEvent.LinkLost -> {
+                        importedArtifactStore?.preserveLastSuccessfulOnFailure()
                         stopReceivingInternal(resumeIdleDrain = false)
                         mutableUiState.update {
                             it.copy(
@@ -316,19 +323,10 @@ class CollectorViewModel(
                 return@launch
             }
 
-            // If switching to a different device, clear old session first.
             val existingSession = uiState.value.currentSession
             if (existingSession != null && existingSession.bluetoothDeviceAddress != address) {
-                repository.clearCurrentSession()
-                parser.dropIncompleteFragment()
-                mutableUiState.update {
-                    it.copy(
-                        currentSession = null,
-                        previewRecords = emptyList(),
-                        receivedCount = 0,
-                        importedFileInfo = null,
-                    )
-                }
+                mutableUiState.update { it.copy(statusMessage = "device_change_requires_clear_current_session") }
+                return@launch
             }
 
             mutableUiState.update {
@@ -398,6 +396,10 @@ class CollectorViewModel(
 
     fun onStartReceivingRequested() {
         scope.launch {
+            if (uiState.value.isImporting) {
+                mutableUiState.update { it.copy(statusMessage = "receive_conflicts_with_import") }
+                return@launch
+            }
             if (uiState.value.connectionState != BluetoothConnectionState.CONNECTED) {
                 mutableUiState.update { it.copy(statusMessage = "receive_requires_connected_state") }
                 return@launch
@@ -423,8 +425,17 @@ class CollectorViewModel(
 
     fun onStartImportRequested() {
         scope.launch {
+            if (uiState.value.isReceiving && !uiState.value.isImporting) {
+                mutableUiState.update { it.copy(statusMessage = "import_conflicts_with_live_receive") }
+                return@launch
+            }
             if (uiState.value.connectionState != BluetoothConnectionState.CONNECTED) {
                 mutableUiState.update { it.copy(statusMessage = "receive_requires_connected_state") }
+                return@launch
+            }
+            val importProfile = uiState.value.currentImportProfile()
+            if (importProfile.verdict != ImportProfileVerdict.SUPPORTED) {
+                mutableUiState.update { it.copy(statusMessage = importProfile.guidanceMessage) }
                 return@launch
             }
 
@@ -432,7 +443,6 @@ class CollectorViewModel(
                 it.copy(
                     isReceiving = true,
                     isImporting = true,
-                    importedFileInfo = null,
                     statusMessage = null,
                 )
             }
@@ -460,6 +470,7 @@ class CollectorViewModel(
             }
             stopReceivingInternal(resumeIdleDrain = false)
             repository.clearCurrentSession()
+            importedArtifactStore?.onCurrentSessionCleared()
             parser.dropIncompleteFragment()
             mutableUiState.update {
                 it.copy(
@@ -467,7 +478,6 @@ class CollectorViewModel(
                     previewRecords = emptyList(),
                     receivedCount = 0,
                     isExportDialogVisible = false,
-                    importedFileInfo = null,
                     statusMessage = null,
                 )
             }
@@ -517,6 +527,7 @@ class CollectorViewModel(
                 receivedCount = restored.records.size,
                 connectionState = BluetoothConnectionState.DISCONNECTED,
                 isReceiving = false,
+                isImporting = false,
                 statusMessage = null,
             )
         }
@@ -648,6 +659,7 @@ class CollectorViewModel(
                     bluetoothController.blockingReadBytes() // wait for first byte
                 }
             } catch (e: java.io.IOException) {
+                importedArtifactStore?.preserveLastSuccessfulOnFailure()
                 cancelIdleDrain()
                 mutableUiState.update {
                     it.copy(
@@ -662,6 +674,7 @@ class CollectorViewModel(
             if (incoming.isNotEmpty()) {
                 buffer.write(incoming)
                 if (buffer.size() > maxSize) {
+                    importedArtifactStore?.preserveLastSuccessfulOnFailure()
                     mutableUiState.update {
                         it.copy(statusMessage = "import_file_too_large")
                     }
@@ -671,6 +684,7 @@ class CollectorViewModel(
         }
         val bytes = buffer.toByteArray()
         if (bytes.isEmpty()) {
+            importedArtifactStore?.preserveLastSuccessfulOnFailure()
             mutableUiState.update {
                 it.copy(isReceiving = false, isImporting = false, statusMessage = "import_no_data_received")
             }
@@ -690,6 +704,7 @@ class CollectorViewModel(
             format = format,
             receivedAt = receivedAt,
         )
+        importedArtifactStore?.save(info)
         mutableUiState.update {
             it.copy(
                 isReceiving = false,

@@ -2,6 +2,8 @@ package com.unforgettable.bluetoothcollector.ui.collector
 
 import com.unforgettable.bluetoothcollector.data.bluetooth.BluetoothConnectionState
 import com.unforgettable.bluetoothcollector.data.import_.ImportedFileInfo
+import com.unforgettable.bluetoothcollector.data.import_.ImportProfile
+import com.unforgettable.bluetoothcollector.data.import_.ImportProfileRegistry
 import com.unforgettable.bluetoothcollector.data.instrument.InstrumentCatalog
 import com.unforgettable.bluetoothcollector.domain.model.BondedBluetoothDeviceItem
 import com.unforgettable.bluetoothcollector.domain.model.DiscoveredBluetoothDeviceItem
@@ -45,5 +47,12 @@ fun CollectorUiState.filteredModels(): List<InstrumentModel> {
 }
 
 fun CollectorUiState.isSelectionLocked(): Boolean {
-    return connectionState != BluetoothConnectionState.DISCONNECTED
+    return currentSession != null || connectionState != BluetoothConnectionState.DISCONNECTED
+}
+
+fun CollectorUiState.currentImportProfile(): ImportProfile {
+    return ImportProfileRegistry.resolve(
+        brandId = selectedBrandId,
+        modelId = selectedModelId,
+    )
 }

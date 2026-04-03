@@ -47,6 +47,9 @@ class CollectorWorkflowTest {
                     onDisconnectRequested = {},
                     onStartReceivingRequested = {},
                     onStopReceivingRequested = {},
+                    onStartImportRequested = {},
+                    onShareImportedFile = {},
+                    onSaveToLocalRequested = {},
                     onClearRequested = {},
                     onExportRequested = {
                         state = state.copy(isExportDialogVisible = true)

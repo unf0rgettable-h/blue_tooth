@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -31,6 +33,8 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -59,6 +63,9 @@ object CollectorScreenTags {
     const val NearbySection = "nearby_section"
     const val PairedSection = "paired_section"
     const val PreviewSection = "preview_section"
+    const val ImportedFilePanel = "imported_file_panel"
+    const val BottomNavBluetooth = "bottom_nav_bluetooth"
+    const val BottomNavData = "bottom_nav_data"
     const val ExportDialog = "export_dialog"
     const val ExportCsv = "export_csv"
     const val ExportTxt = "export_txt"
@@ -86,87 +93,115 @@ fun CollectorScreen(
     onDismissExportDialog: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    var selectedDestination by remember { mutableStateOf(CollectorDestination.BLUETOOTH) }
+
     Surface(
         modifier = modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background,
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            HeaderBlock(uiState = uiState)
-            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                val stacked = maxWidth < 760.dp
-                if (stacked) {
-                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                        InstrumentPanel(
-                            brands = uiState.availableBrands,
-                            models = uiState.filteredModels(),
-                            selectedBrandId = uiState.selectedBrandId,
-                            selectedModelId = uiState.selectedModelId,
-                            selectionLocked = uiState.isSelectionLocked(),
-                            onBrandSelected = onInstrumentBrandSelected,
-                            onModelSelected = onInstrumentModelSelected,
-                        )
-                        BluetoothPanel(
+        Column(modifier = Modifier.fillMaxSize()) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                HeaderBlock(uiState = uiState)
+                when (selectedDestination) {
+                    CollectorDestination.BLUETOOTH -> {
+                        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                            val stacked = maxWidth < 760.dp
+                            if (stacked) {
+                                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                                    InstrumentPanel(
+                                        brands = uiState.availableBrands,
+                                        models = uiState.filteredModels(),
+                                        selectedBrandId = uiState.selectedBrandId,
+                                        selectedModelId = uiState.selectedModelId,
+                                        selectionLocked = uiState.isSelectionLocked(),
+                                        onBrandSelected = onInstrumentBrandSelected,
+                                        onModelSelected = onInstrumentModelSelected,
+                                    )
+                                    BluetoothPanel(
+                                        uiState = uiState,
+                                        selectionLocked = uiState.isSelectionLocked(),
+                                        onTargetDeviceSelected = onTargetDeviceSelected,
+                                        onPairDeviceRequested = onPairDeviceRequested,
+                                    )
+                                }
+                            } else {
+                                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                    InstrumentPanel(
+                                        modifier = Modifier.weight(1f),
+                                        brands = uiState.availableBrands,
+                                        models = uiState.filteredModels(),
+                                        selectedBrandId = uiState.selectedBrandId,
+                                        selectedModelId = uiState.selectedModelId,
+                                        selectionLocked = uiState.isSelectionLocked(),
+                                        onBrandSelected = onInstrumentBrandSelected,
+                                        onModelSelected = onInstrumentModelSelected,
+                                    )
+                                    BluetoothPanel(
+                                        modifier = Modifier.weight(1.15f),
+                                        uiState = uiState,
+                                        selectionLocked = uiState.isSelectionLocked(),
+                                        onTargetDeviceSelected = onTargetDeviceSelected,
+                                        onPairDeviceRequested = onPairDeviceRequested,
+                                    )
+                                }
+                            }
+                        }
+                        BluetoothActionPanel(
                             uiState = uiState,
-                            selectionLocked = uiState.isSelectionLocked(),
-                            onTargetDeviceSelected = onTargetDeviceSelected,
-                            onPairDeviceRequested = onPairDeviceRequested,
+                            onDiscoveryRequested = onDiscoveryRequested,
+                            onStopDiscoveryRequested = onStopDiscoveryRequested,
+                            onConnectRequested = onConnectRequested,
+                            onDisconnectRequested = onDisconnectRequested,
                         )
                     }
-                } else {
-                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                        InstrumentPanel(
-                            modifier = Modifier.weight(1f),
-                            brands = uiState.availableBrands,
-                            models = uiState.filteredModels(),
-                            selectedBrandId = uiState.selectedBrandId,
-                            selectedModelId = uiState.selectedModelId,
-                            selectionLocked = uiState.isSelectionLocked(),
-                            onBrandSelected = onInstrumentBrandSelected,
-                            onModelSelected = onInstrumentModelSelected,
-                        )
-                        BluetoothPanel(
-                            modifier = Modifier.weight(1.15f),
+
+                    CollectorDestination.DATA -> {
+                        DataActionPanel(
                             uiState = uiState,
-                            selectionLocked = uiState.isSelectionLocked(),
-                            onTargetDeviceSelected = onTargetDeviceSelected,
-                            onPairDeviceRequested = onPairDeviceRequested,
+                            onStartReceivingRequested = onStartReceivingRequested,
+                            onStopReceivingRequested = onStopReceivingRequested,
+                            onStartImportRequested = onStartImportRequested,
+                            onClearRequested = onClearRequested,
+                            onExportRequested = onExportRequested,
+                            onSaveToLocalRequested = onSaveToLocalRequested,
                         )
+                        ImportedFilePanel(
+                            fileInfo = uiState.importedFileInfo,
+                            onShareFile = onShareImportedFile,
+                        )
+                        PreviewPanel(records = uiState.previewRecords)
                     }
                 }
             }
-            ActionPanel(
-                uiState = uiState,
-                onDiscoveryRequested = onDiscoveryRequested,
-                onStopDiscoveryRequested = onStopDiscoveryRequested,
-                onConnectRequested = onConnectRequested,
-                onDisconnectRequested = onDisconnectRequested,
-                onStartReceivingRequested = onStartReceivingRequested,
-                onStopReceivingRequested = onStopReceivingRequested,
-                onStartImportRequested = onStartImportRequested,
-                onClearRequested = onClearRequested,
-                onExportRequested = onExportRequested,
-                onSaveToLocalRequested = onSaveToLocalRequested,
-            )
-            uiState.importedFileInfo?.let { fileInfo ->
-                ImportedFilePanel(
-                    fileInfo = fileInfo,
-                    onShareFile = onShareImportedFile,
+            NavigationBar {
+                NavigationBarItem(
+                    modifier = Modifier.testTag(CollectorScreenTags.BottomNavBluetooth),
+                    selected = selectedDestination == CollectorDestination.BLUETOOTH,
+                    onClick = { selectedDestination = CollectorDestination.BLUETOOTH },
+                    icon = {},
+                    label = { Text(text = "蓝牙") },
+                )
+                NavigationBarItem(
+                    modifier = Modifier.testTag(CollectorScreenTags.BottomNavData),
+                    selected = selectedDestination == CollectorDestination.DATA,
+                    onClick = { selectedDestination = CollectorDestination.DATA },
+                    icon = {},
+                    label = { Text(text = "数据") },
                 )
             }
-            PreviewPanel(records = uiState.previewRecords)
-        }
-        if (uiState.isExportDialogVisible) {
-            Box(modifier = Modifier.testTag(CollectorScreenTags.ExportDialog)) {
-                ExportFormatDialog(
-                    onSelect = onExportFormatSelected,
-                    onDismiss = onDismissExportDialog,
-                )
+            if (uiState.isExportDialogVisible) {
+                Box(modifier = Modifier.testTag(CollectorScreenTags.ExportDialog)) {
+                    ExportFormatDialog(
+                        onSelect = onExportFormatSelected,
+                        onDismiss = onDismissExportDialog,
+                    )
+                }
             }
         }
     }
@@ -324,25 +359,23 @@ private fun BluetoothPanel(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ActionPanel(
+private fun BluetoothActionPanel(
     uiState: CollectorUiState,
     onDiscoveryRequested: () -> Unit,
     onStopDiscoveryRequested: () -> Unit,
     onConnectRequested: () -> Unit,
     onDisconnectRequested: () -> Unit,
-    onStartReceivingRequested: () -> Unit,
-    onStopReceivingRequested: () -> Unit,
-    onStartImportRequested: () -> Unit,
-    onClearRequested: () -> Unit,
-    onExportRequested: () -> Unit,
-    onSaveToLocalRequested: () -> Unit,
 ) {
     PanelCard(
-        title = "连接与接收控制",
-        subtitle = "搜索、连接、接收/导入、清空、导出与保存。",
+        title = "蓝牙控制",
+        subtitle = "搜索、配对、连接、断开都留在蓝牙页面。",
     ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             FilledTonalButton(
                 onClick = onDiscoveryRequested,
                 enabled = uiState.permissionState.canDiscover &&
@@ -374,8 +407,30 @@ private fun ActionPanel(
                 Text(text = "断开")
             }
         }
-        Spacer(modifier = Modifier.height(10.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun DataActionPanel(
+    uiState: CollectorUiState,
+    onStartReceivingRequested: () -> Unit,
+    onStopReceivingRequested: () -> Unit,
+    onStartImportRequested: () -> Unit,
+    onClearRequested: () -> Unit,
+    onExportRequested: () -> Unit,
+    onSaveToLocalRequested: () -> Unit,
+) {
+    val importProfile = uiState.currentImportProfile()
+
+    PanelCard(
+        title = "数据控制",
+        subtitle = "实时接收、批量导入、清空、导出与保存都留在数据页面。",
+    ) {
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             FilledTonalButton(
                 onClick = onStartReceivingRequested,
                 enabled = uiState.connectionState == BluetoothConnectionState.CONNECTED && !uiState.isReceiving,
@@ -386,7 +441,7 @@ private fun ActionPanel(
                 onClick = onStartImportRequested,
                 enabled = uiState.connectionState == BluetoothConnectionState.CONNECTED && !uiState.isReceiving,
             ) {
-                Text(text = "导入存储数据")
+                Text(text = importProfile.actionLabel)
             }
             OutlinedButton(
                 onClick = onStopReceivingRequested,
@@ -703,34 +758,39 @@ private fun StatusChip(label: String) {
 
 @Composable
 private fun ImportedFilePanel(
-    fileInfo: ImportedFileInfo,
+    fileInfo: ImportedFileInfo?,
     onShareFile: () -> Unit,
 ) {
     PanelCard(
+        modifier = Modifier.testTag(CollectorScreenTags.ImportedFilePanel),
         title = "已导入文件",
         subtitle = "从仪器接收的原始数据文件。",
     ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
-        ) {
-            Column(modifier = Modifier.padding(12.dp)) {
-                Text(
-                    text = fileInfo.file.name,
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Medium,
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "格式：${fileInfo.format.displayName}　大小：${formatFileSize(fileInfo.sizeBytes)}　时间：${fileInfo.receivedAt.take(19)}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilledTonalButton(onClick = onShareFile) {
-                        Text(text = "分享文件")
+        if (fileInfo == null) {
+            EmptyPlaceholder(text = "暂无导入文件")
+        } else {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text(
+                        text = fileInfo.file.name,
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "格式：${fileInfo.format.displayName}　大小：${formatFileSize(fileInfo.sizeBytes)}　时间：${fileInfo.receivedAt.take(19)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilledTonalButton(onClick = onShareFile) {
+                            Text(text = "分享文件")
+                        }
                     }
                 }
             }

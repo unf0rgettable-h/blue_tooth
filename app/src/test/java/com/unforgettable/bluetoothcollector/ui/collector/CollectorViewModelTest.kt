@@ -390,6 +390,7 @@ class CollectorViewModelTest {
 
         val importProfile = viewModel.uiState.value.currentImportProfile()
 
+        assertEquals("接收实时GSI数据", importProfile.liveReceiveLabel)
         assertEquals("接收导出数据", importProfile.actionLabel)
         assertEquals("Captivate 导出 / GSI output", importProfile.protocolSummary)
     }

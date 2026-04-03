@@ -26,6 +26,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -184,20 +185,20 @@ fun CollectorScreen(
                     modifier = Modifier.testTag(CollectorScreenTags.BottomNavBluetooth),
                     selected = selectedDestination == CollectorDestination.BLUETOOTH,
                     onClick = { selectedDestination = CollectorDestination.BLUETOOTH },
-                    icon = {},
+                    icon = { Spacer(modifier = Modifier.size(1.dp)) },
                     label = { Text(text = "蓝牙") },
                 )
                 NavigationBarItem(
                     modifier = Modifier.testTag(CollectorScreenTags.BottomNavData),
                     selected = selectedDestination == CollectorDestination.DATA,
                     onClick = { selectedDestination = CollectorDestination.DATA },
-                    icon = {},
+                    icon = { Spacer(modifier = Modifier.size(1.dp)) },
                     label = { Text(text = "数据") },
                 )
             }
             if (uiState.isExportDialogVisible) {
                 Box(modifier = Modifier.testTag(CollectorScreenTags.ExportDialog)) {
-                    ExportFormatDialog(
+                    CollectorExportDialog(
                         onSelect = onExportFormatSelected,
                         onDismiss = onDismissExportDialog,
                     )
@@ -205,6 +206,56 @@ fun CollectorScreen(
             }
         }
     }
+}
+
+@Composable
+private fun CollectorExportDialog(
+    onSelect: (ExportFormat) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        modifier = Modifier.fillMaxWidth(),
+        onDismissRequest = onDismiss,
+        title = {
+            Text(text = "选择导出格式")
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    text = "当前会话会先落盘到手机，再通过系统分享发送。",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                FilledTonalButton(
+                    onClick = { onSelect(ExportFormat.CSV) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag(CollectorScreenTags.ExportCsv),
+                ) {
+                    Text(text = "CSV")
+                }
+                FilledTonalButton(
+                    onClick = { onSelect(ExportFormat.TXT) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag(CollectorScreenTags.ExportTxt),
+                ) {
+                    Text(text = "TXT 原始日志")
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            OutlinedButton(
+                modifier = Modifier.padding(end = 8.dp),
+                onClick = onDismiss,
+            ) {
+                Text(text = "取消")
+            }
+        },
+    )
 }
 
 @Composable
@@ -455,7 +506,7 @@ private fun DataActionPanel(
                 onClick = onStartReceivingRequested,
                 enabled = uiState.connectionState == BluetoothConnectionState.CONNECTED && !uiState.isReceiving,
             ) {
-                Text(text = "开始接收")
+                Text(text = importProfile.liveReceiveLabel)
             }
             FilledTonalButton(
                 onClick = onStartImportRequested,

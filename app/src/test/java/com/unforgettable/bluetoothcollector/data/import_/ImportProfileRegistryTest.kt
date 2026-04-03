@@ -13,6 +13,7 @@ class ImportProfileRegistryTest {
         )
 
         assertEquals(ImportProfileVerdict.SUPPORTED, profile.verdict)
+        assertEquals("开始接收", profile.liveReceiveLabel)
         assertEquals("导入存储数据", profile.actionLabel)
     }
 
@@ -24,6 +25,7 @@ class ImportProfileRegistryTest {
         )
 
         assertEquals(ImportProfileVerdict.SUPPORTED, profile.verdict)
+        assertEquals("接收实时GSI数据", profile.liveReceiveLabel)
         assertEquals("接收导出数据", profile.actionLabel)
         assertEquals("Captivate 导出 / GSI output", profile.protocolSummary)
     }

@@ -10,6 +10,7 @@ data class ImportProfile(
     val brandId: String?,
     val modelId: String?,
     val verdict: ImportProfileVerdict,
+    val liveReceiveLabel: String,
     val actionLabel: String,
     val guidanceMessage: String,
     val protocolSummary: String,

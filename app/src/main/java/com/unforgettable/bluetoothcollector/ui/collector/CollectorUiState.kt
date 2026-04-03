@@ -47,7 +47,7 @@ fun CollectorUiState.filteredModels(): List<InstrumentModel> {
 }
 
 fun CollectorUiState.isSelectionLocked(): Boolean {
-    return currentSession != null || connectionState != BluetoothConnectionState.DISCONNECTED
+    return connectionState != BluetoothConnectionState.DISCONNECTED
 }
 
 fun CollectorUiState.currentImportProfile(): ImportProfile {

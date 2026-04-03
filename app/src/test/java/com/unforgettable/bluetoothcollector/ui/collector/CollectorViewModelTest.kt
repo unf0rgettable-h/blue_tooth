@@ -424,7 +424,7 @@ class CollectorViewModelTest {
     }
 
     @Test
-    fun active_session_keeps_selection_locked_until_clear() = runTest(mainDispatcherRule.dispatcher) {
+    fun disconnected_restored_session_allows_selection_change_and_clears_current_session() = runTest(mainDispatcherRule.dispatcher) {
         val viewModel = createViewModel(
             repository = FakeCollectorDataRepository(
                 restoredSession = RestoredCollectorSession(
@@ -440,9 +440,11 @@ class CollectorViewModelTest {
         viewModel.onTargetDeviceSelected("66:77:88:99:AA:BB")
         advanceUntilIdle()
 
-        assertEquals("leica", viewModel.uiState.value.selectedBrandId)
-        assertEquals("TS02", viewModel.uiState.value.selectedModelId)
-        assertEquals(sampleBondedDevice().address, viewModel.uiState.value.selectedTargetDeviceAddress)
+        assertEquals("sokkia", viewModel.uiState.value.selectedBrandId)
+        assertEquals("SX-103", viewModel.uiState.value.selectedModelId)
+        assertEquals("66:77:88:99:AA:BB", viewModel.uiState.value.selectedTargetDeviceAddress)
+        assertEquals(null, viewModel.uiState.value.currentSession)
+        assertEquals(0, viewModel.uiState.value.previewRecords.size)
     }
 
     private fun createViewModel(

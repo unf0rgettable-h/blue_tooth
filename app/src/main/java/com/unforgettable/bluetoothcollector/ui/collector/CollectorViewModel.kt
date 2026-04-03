@@ -218,6 +218,20 @@ class CollectorViewModel(
 
     fun onInstrumentBrandSelected(brandId: String) {
         if (uiState.value.isSelectionLocked() && uiState.value.selectedBrandId != brandId) return
+        if (uiState.value.currentSession != null && uiState.value.selectedBrandId != brandId) {
+            scope.launch {
+                clearCurrentSessionForSelectionChange()
+                val nextModelId = InstrumentCatalog.models.firstOrNull { it.brandId == brandId }?.modelId
+                mutableUiState.update {
+                    it.copy(
+                        selectedBrandId = brandId,
+                        selectedModelId = nextModelId,
+                        statusMessage = null,
+                    )
+                }
+            }
+            return
+        }
         val nextModelId = InstrumentCatalog.models.firstOrNull { it.brandId == brandId }?.modelId
         mutableUiState.update {
             it.copy(
@@ -230,6 +244,20 @@ class CollectorViewModel(
 
     fun onInstrumentModelSelected(modelId: String) {
         if (uiState.value.isSelectionLocked() && uiState.value.selectedModelId != modelId) return
+        if (uiState.value.currentSession != null && uiState.value.selectedModelId != modelId) {
+            scope.launch {
+                clearCurrentSessionForSelectionChange()
+                val matchedModel = InstrumentCatalog.models.firstOrNull { it.modelId == modelId }
+                mutableUiState.update {
+                    it.copy(
+                        selectedBrandId = matchedModel?.brandId ?: it.selectedBrandId,
+                        selectedModelId = modelId,
+                        statusMessage = null,
+                    )
+                }
+            }
+            return
+        }
         val matchedModel = InstrumentCatalog.models.firstOrNull { it.modelId == modelId }
         mutableUiState.update {
             it.copy(
@@ -242,6 +270,18 @@ class CollectorViewModel(
 
     fun onTargetDeviceSelected(address: String) {
         if (uiState.value.isSelectionLocked() && uiState.value.selectedTargetDeviceAddress != address) return
+        if (uiState.value.currentSession != null && uiState.value.selectedTargetDeviceAddress != address) {
+            scope.launch {
+                clearCurrentSessionForSelectionChange()
+                mutableUiState.update {
+                    it.copy(
+                        selectedTargetDeviceAddress = address,
+                        statusMessage = null,
+                    )
+                }
+            }
+            return
+        }
         mutableUiState.update {
             it.copy(
                 selectedTargetDeviceAddress = address,
@@ -529,6 +569,20 @@ class CollectorViewModel(
                 isReceiving = false,
                 isImporting = false,
                 statusMessage = null,
+            )
+        }
+    }
+
+    private suspend fun clearCurrentSessionForSelectionChange() {
+        repository.clearCurrentSession()
+        importedArtifactStore?.onCurrentSessionCleared()
+        parser.dropIncompleteFragment()
+        mutableUiState.update {
+            it.copy(
+                currentSession = null,
+                previewRecords = emptyList(),
+                receivedCount = 0,
+                isExportDialogVisible = false,
             )
         }
     }

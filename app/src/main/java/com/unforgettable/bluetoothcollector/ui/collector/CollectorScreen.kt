@@ -427,6 +427,26 @@ private fun DataActionPanel(
         title = "数据控制",
         subtitle = "实时接收、批量导入、清空、导出与保存都留在数据页面。",
     ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.24f),
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Text(
+                    text = "当前协议路径：${importProfile.protocolSummary}",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = importProfile.guidanceMessage,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(10.dp))
         FlowRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -455,18 +475,23 @@ private fun DataActionPanel(
             ) {
                 Text(text = "清空数据")
             }
-            FilledTonalButton(
-                onClick = onExportRequested,
-                enabled = uiState.currentSession != null && uiState.previewRecords.isNotEmpty(),
-            ) {
-                Text(text = "导出并分享")
+            if (uiState.currentSession != null && uiState.previewRecords.isNotEmpty()) {
+                FilledTonalButton(
+                    onClick = onExportRequested,
+                    enabled = true,
+                ) {
+                    Text(text = "导出当前记录")
+                }
             }
-            OutlinedButton(
-                onClick = onSaveToLocalRequested,
-                enabled = (uiState.currentSession != null && uiState.previewRecords.isNotEmpty()) ||
-                    uiState.importedFileInfo != null,
+            if ((uiState.currentSession != null && uiState.previewRecords.isNotEmpty()) ||
+                uiState.importedFileInfo != null
             ) {
-                Text(text = "保存到本地")
+                OutlinedButton(
+                    onClick = onSaveToLocalRequested,
+                    enabled = true,
+                ) {
+                    Text(text = "保存到本地")
+                }
             }
         }
     }

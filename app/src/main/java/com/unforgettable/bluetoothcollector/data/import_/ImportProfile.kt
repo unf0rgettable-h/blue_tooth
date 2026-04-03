@@ -12,4 +12,5 @@ data class ImportProfile(
     val verdict: ImportProfileVerdict,
     val actionLabel: String,
     val guidanceMessage: String,
+    val protocolSummary: String,
 )

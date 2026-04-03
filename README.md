@@ -2,7 +2,7 @@
 
 Android app for receiving measurement data from total stations via Bluetooth. Built for surveyors who need a simple, reliable way to get data off their instruments and onto their phones.
 
-> Latest release target: `v1.3.0`
+> Latest release target: `v1.3.1`
 
 ## What it does
 
@@ -113,6 +113,7 @@ Bluetooth disconnect detection uses two redundant mechanisms:
 
 | Version | Date | Changes |
 |---------|------|---------|
+| v1.3.1 | 2026-04-03 | TS60 data page now exposes active receive/export action label, protocol summary, cleaner data-page controls, follow-up reliability fixes |
 | v1.3.0 | 2026-04-03 | Split Bluetooth/Data pages, persistent import file panel, selection/session locking fix, TS60 import guidance branch |
 | v1.2.0 | 2026-04-01 | Device selection unlock, raw file import, text copy, save to local, catalog update |
 | v1.1.0 | 2026-03-31 | Bluetooth receive fix, disconnect detection, batch import mode |

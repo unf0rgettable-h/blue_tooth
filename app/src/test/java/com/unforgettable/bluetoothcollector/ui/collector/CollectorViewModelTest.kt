@@ -374,7 +374,7 @@ class CollectorViewModelTest {
     }
 
     @Test
-    fun ts60_import_request_surfaces_guidance_instead_of_starting_import() = runTest(mainDispatcherRule.dispatcher) {
+    fun ts60_profile_is_supported_and_exposes_captivate_status_message() = runTest(mainDispatcherRule.dispatcher) {
         val bluetooth = FakeCollectorBluetoothController(
             pairedDevices = listOf(sampleBondedDevice()),
         )
@@ -388,11 +388,10 @@ class CollectorViewModelTest {
         viewModel.onConnectRequested(sampleBondedDevice().address)
         advanceUntilIdle()
 
-        viewModel.onStartImportRequested()
-        advanceUntilIdle()
+        val importProfile = viewModel.uiState.value.currentImportProfile()
 
-        assertFalse(viewModel.uiState.value.isImporting)
-        assertEquals("TS60 批量导入需要先按型号兼容说明确认可用导出路径。", viewModel.uiState.value.statusMessage)
+        assertEquals("接收导出数据", importProfile.actionLabel)
+        assertEquals("Captivate 导出 / GSI output", importProfile.protocolSummary)
     }
 
     @Ignore("Needs a more deterministic transport fake to avoid hanging the unit-test harness")

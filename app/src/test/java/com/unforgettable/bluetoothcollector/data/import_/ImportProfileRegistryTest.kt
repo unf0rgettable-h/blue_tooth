@@ -17,14 +17,15 @@ class ImportProfileRegistryTest {
     }
 
     @Test
-    fun ts60_profile_defaults_to_guidance_only_until_supported_path_is_verified() {
+    fun ts60_profile_uses_dedicated_captivate_import_path() {
         val profile = ImportProfileRegistry.resolve(
             brandId = "leica",
             modelId = "TS60",
         )
 
-        assertEquals(ImportProfileVerdict.GUIDANCE_ONLY, profile.verdict)
-        assertEquals("查看导入说明", profile.actionLabel)
+        assertEquals(ImportProfileVerdict.SUPPORTED, profile.verdict)
+        assertEquals("接收导出数据", profile.actionLabel)
+        assertEquals("Captivate 导出 / GSI output", profile.protocolSummary)
     }
 
     @Test

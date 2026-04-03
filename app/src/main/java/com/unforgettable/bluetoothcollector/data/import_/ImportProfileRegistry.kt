@@ -12,9 +12,10 @@ object ImportProfileRegistry {
             brandId == "leica" && modelId == "TS60" -> ImportProfile(
                 brandId = brandId,
                 modelId = modelId,
-                verdict = ImportProfileVerdict.GUIDANCE_ONLY,
-                actionLabel = "查看导入说明",
-                guidanceMessage = "TS60 批量导入需要先按型号兼容说明确认可用导出路径。",
+                verdict = ImportProfileVerdict.SUPPORTED,
+                actionLabel = "接收导出数据",
+                guidanceMessage = "TS60 / Captivate：整项目导出使用 ASCII format file -> RS232 interface；实时点存输出对应 GSI output 连接。",
+                protocolSummary = "Captivate 导出 / GSI output",
             )
 
             modelExists -> ImportProfile(
@@ -23,6 +24,7 @@ object ImportProfileRegistry {
                 verdict = ImportProfileVerdict.SUPPORTED,
                 actionLabel = "导入存储数据",
                 guidanceMessage = "按当前已验证的导入流程执行。",
+                protocolSummary = "标准蓝牙导入流程",
             )
 
             else -> ImportProfile(
@@ -31,6 +33,7 @@ object ImportProfileRegistry {
                 verdict = ImportProfileVerdict.UNSUPPORTED,
                 actionLabel = "查看限制说明",
                 guidanceMessage = "该型号在当前版本未建立批量导入 profile。",
+                protocolSummary = "未建模",
             )
         }
     }

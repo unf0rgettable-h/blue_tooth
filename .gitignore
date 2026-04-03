@@ -3,6 +3,8 @@ PROJECT.md
 *.apk
 .worktrees/
 .gradle/
+.kotlin/
+.superpowers/
 .tools/
 **/build/
 local.properties

@@ -11,4 +11,11 @@ data class MeasurementRecord(
     val rawPayload: String,
     val parsedCode: String?,
     val parsedValue: String?,
+    val protocolType: String? = null,
+    val hzAngleRad: Double? = null,
+    val vAngleRad: Double? = null,
+    val slopeDistanceM: Double? = null,
+    val coordinateE: Double? = null,
+    val coordinateN: Double? = null,
+    val coordinateH: Double? = null,
 )

@@ -1,24 +1,28 @@
 package com.unforgettable.bluetoothcollector.ui.collector
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.unforgettable.bluetoothcollector.data.bluetooth.BluetoothConnectionState
+import com.unforgettable.bluetoothcollector.data.instrument.InstrumentCatalog
 import com.unforgettable.bluetoothcollector.data.import_.ImportedArtifactStoreContract
 import com.unforgettable.bluetoothcollector.data.import_.ImportProfileVerdict
-import com.unforgettable.bluetoothcollector.data.bluetooth.TextStreamRecordParser
-import com.unforgettable.bluetoothcollector.data.instrument.InstrumentCatalog
+import com.unforgettable.bluetoothcollector.data.protocol.ProtocolHandler
+import com.unforgettable.bluetoothcollector.data.protocol.ProtocolHandlerFactory
+import com.unforgettable.bluetoothcollector.data.protocol.ProtocolTransport
 import com.unforgettable.bluetoothcollector.domain.model.BondedBluetoothDeviceItem
 import com.unforgettable.bluetoothcollector.domain.model.DelimiterStrategy
 import com.unforgettable.bluetoothcollector.domain.model.DiscoveredBluetoothDeviceItem
 import com.unforgettable.bluetoothcollector.domain.model.ExportFormat
+import com.unforgettable.bluetoothcollector.domain.model.InstrumentModel
 import com.unforgettable.bluetoothcollector.domain.model.MeasurementRecord
 import com.unforgettable.bluetoothcollector.domain.model.Session
 import java.io.File
-import java.util.UUID
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -82,7 +86,7 @@ interface CollectorDataRepository {
     suspend fun clearCurrentSession()
 }
 
-interface CollectorBluetoothController {
+interface CollectorBluetoothController : ProtocolTransport {
     val nearbyDevices: StateFlow<List<DiscoveredBluetoothDeviceItem>>
     val pairedDevices: StateFlow<List<BondedBluetoothDeviceItem>>
     val isDiscovering: StateFlow<Boolean>
@@ -111,10 +115,6 @@ interface CollectorBluetoothController {
 
     suspend fun drainIncomingBytes(maxBytes: Int = 1024): ByteArray
 
-    suspend fun blockingReadBytes(): ByteArray
-
-    suspend fun blockingReadBytesWithTimeout(timeoutMs: Long): ByteArray?
-
     fun shutdown()
 }
 
@@ -130,6 +130,7 @@ class CollectorViewModel(
     private val repository: CollectorDataRepository,
     private val bluetoothController: CollectorBluetoothController,
     private val exportManager: CollectorExportManager,
+    private val protocolHandlerFactory: ProtocolHandlerFactory,
     private val timeProvider: CollectorTimeProvider,
     private val importDirectory: java.io.File,
     private val importedArtifactStore: ImportedArtifactStoreContract? = null,
@@ -139,11 +140,11 @@ class CollectorViewModel(
     private val receiveDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
     private val scope = CoroutineScope(SupervisorJob() + ioDispatcher)
-    private val parser = TextStreamRecordParser()
     private val mutableUiState = MutableStateFlow(CollectorUiState())
     private val mutableEvents = MutableSharedFlow<CollectorUiEvent>(extraBufferCapacity = 1)
     private var receiveJob: Job? = null
     private var idleDrainJob: Job? = null
+    private var activeProtocolHandler: ProtocolHandler? = null
 
     val uiState: StateFlow<CollectorUiState> = mutableUiState.stateIn(
         scope = scope,
@@ -446,6 +447,25 @@ class CollectorViewModel(
             }
 
             val activeSession = ensureActiveSession() ?: return@launch
+            val selectedModel = currentInstrumentModel()
+            if (selectedModel == null) {
+                mutableUiState.update { it.copy(statusMessage = "receive_requires_instrument_and_device") }
+                return@launch
+            }
+            if (receiveJob?.isActive == true) {
+                return@launch
+            }
+
+            val handler = protocolHandlerFactory.create(
+                model = selectedModel,
+                session = activeSession,
+                startingSequence = mutableUiState.value.previewRecords.size.toLong(),
+                timeProvider = timeProvider::now,
+                onOverflow = {
+                    mutableUiState.update { it.copy(statusMessage = "incoming_buffer_overflow_trimmed") }
+                },
+            )
+            activeProtocolHandler = handler
             mutableUiState.update {
                 it.copy(
                     currentSession = activeSession,
@@ -454,11 +474,8 @@ class CollectorViewModel(
                 )
             }
             cancelIdleDrain()
-            if (receiveJob?.isActive == true) {
-                return@launch
-            }
             receiveJob = CoroutineScope(SupervisorJob() + receiveDispatcher).launch {
-                receiveLoop(activeSession, importMode = false)
+                collectProtocolSession(activeSession, handler)
             }
         }
     }
@@ -496,6 +513,14 @@ class CollectorViewModel(
         }
     }
 
+    fun onSingleMeasureRequested() {
+        viewModelScope.launch {
+            val session = uiState.value.currentSession ?: return@launch
+            val record = activeProtocolHandler?.triggerSingleMeasurement() ?: return@launch
+            appendRecordToState(session, record)
+        }
+    }
+
     fun onStopReceivingRequested() {
         scope.launch {
             stopReceivingInternal(resumeIdleDrain = true)
@@ -511,7 +536,6 @@ class CollectorViewModel(
             stopReceivingInternal(resumeIdleDrain = false)
             repository.clearCurrentSession()
             importedArtifactStore?.onCurrentSessionCleared()
-            parser.dropIncompleteFragment()
             mutableUiState.update {
                 it.copy(
                     currentSession = null,
@@ -576,7 +600,6 @@ class CollectorViewModel(
     private suspend fun clearCurrentSessionForSelectionChange() {
         repository.clearCurrentSession()
         importedArtifactStore?.onCurrentSessionCleared()
-        parser.dropIncompleteFragment()
         mutableUiState.update {
             it.copy(
                 currentSession = null,
@@ -590,10 +613,7 @@ class CollectorViewModel(
     private suspend fun ensureActiveSession(): Session? {
         uiState.value.currentSession?.let { return it }
 
-        val model = InstrumentCatalog.models.firstOrNull {
-            it.modelId == uiState.value.selectedModelId &&
-                it.brandId == uiState.value.selectedBrandId
-        }
+        val model = currentInstrumentModel()
         val selectedDevice = bluetoothController.pairedDevices.value.firstOrNull {
             it.address == uiState.value.selectedTargetDeviceAddress
         }
@@ -618,84 +638,51 @@ class CollectorViewModel(
         }.getOrNull()
     }
 
-    private suspend fun receiveLoop(session: Session, importMode: Boolean = false) {
-        val startCount = mutableUiState.value.receivedCount
-        while (mutableUiState.value.isReceiving &&
-            mutableUiState.value.connectionState == BluetoothConnectionState.CONNECTED
-        ) {
-            val hasReceivedRecords = mutableUiState.value.receivedCount > startCount
-            val incoming = try {
-                if (importMode && hasReceivedRecords) {
-                    // Already received records in this import — use silence timeout to detect end.
-                    bluetoothController.blockingReadBytesWithTimeout(IMPORT_SILENCE_TIMEOUT_MS)
-                        ?: run {
-                            val totalImported = mutableUiState.value.receivedCount - startCount
-                            stopReceivingInternal(resumeIdleDrain = true)
-                            mutableUiState.update {
-                                it.copy(
-                                    isImporting = false,
-                                    statusMessage = "已导入 $totalImported 条记录",
-                                )
-                            }
-                            return
-                        }
-                } else {
-                    bluetoothController.blockingReadBytes()
-                }
-            } catch (e: java.io.IOException) {
-                // Socket threw on read — physical link dropped.
-                parser.dropIncompleteFragment()
-                cancelIdleDrain()
-                mutableUiState.update {
-                    it.copy(
-                        isReceiving = false,
-                        isImporting = false,
-                        connectionState = BluetoothConnectionState.DISCONNECTED,
-                        statusMessage = "bluetooth_link_lost",
-                    )
-                }
-                return
+    private suspend fun collectProtocolSession(
+        session: Session,
+        handler: ProtocolHandler,
+    ) {
+        try {
+            handler.startSession().collectLatest { record ->
+                appendRecordToState(session, record)
             }
-            if (incoming.isEmpty()) continue
-            val parseResult = parser.accept(
-                chunk = incoming.toString(Charsets.UTF_8),
-                delimiterStrategy = session.delimiterStrategy,
-            )
-            if (parseResult.completed.isEmpty() && parseResult.overflowed) {
-                mutableUiState.update {
-                    it.copy(statusMessage = "incoming_buffer_overflow_trimmed")
-                }
-            }
-            parseResult.completed.forEach { parsedRecord ->
-                val nextSequence = mutableUiState.value.previewRecords.size.toLong() + 1L
-                val receivedAt = timeProvider.now()
-                val record = MeasurementRecord(
-                    id = "${session.sessionId}-${UUID.randomUUID()}",
-                    sequence = nextSequence,
-                    receivedAt = receivedAt,
-                    instrumentBrand = session.instrumentBrand,
-                    instrumentModel = session.instrumentModel,
-                    bluetoothDeviceName = session.bluetoothDeviceName,
-                    bluetoothDeviceAddress = session.bluetoothDeviceAddress,
-                    rawPayload = parsedRecord.rawPayload,
-                    parsedCode = parsedRecord.parsedCode,
-                    parsedValue = parsedRecord.parsedValue,
+        } catch (e: java.io.IOException) {
+            cancelIdleDrain()
+            mutableUiState.update {
+                it.copy(
+                    isReceiving = false,
+                    isImporting = false,
+                    connectionState = BluetoothConnectionState.DISCONNECTED,
+                    statusMessage = "bluetooth_link_lost",
                 )
-                repository.appendRecord(session.sessionId, record)
-                mutableUiState.update {
-                    val nextRecords = it.previewRecords + record
-                    it.copy(
-                        currentSession = session.copy(updatedAt = receivedAt),
-                        previewRecords = nextRecords,
-                        receivedCount = nextRecords.size,
-                        statusMessage = if (parseResult.overflowed) {
-                            "incoming_buffer_overflow_trimmed"
-                        } else {
-                            it.statusMessage
-                        },
-                    )
-                }
             }
+        } finally {
+            handler.stopSession()
+            if (activeProtocolHandler === handler) {
+                activeProtocolHandler = null
+            }
+        }
+    }
+
+    private suspend fun appendRecordToState(
+        session: Session,
+        record: MeasurementRecord,
+    ) {
+        repository.appendRecord(session.sessionId, record)
+        mutableUiState.update {
+            val nextRecords = it.previewRecords + record
+            it.copy(
+                currentSession = session.copy(updatedAt = record.receivedAt),
+                previewRecords = nextRecords,
+                receivedCount = nextRecords.size,
+            )
+        }
+    }
+
+    private fun currentInstrumentModel(): InstrumentModel? {
+        return InstrumentCatalog.models.firstOrNull {
+            it.modelId == uiState.value.selectedModelId &&
+                it.brandId == uiState.value.selectedBrandId
         }
     }
 
@@ -824,9 +811,10 @@ class CollectorViewModel(
     private suspend fun stopReceivingInternal(
         resumeIdleDrain: Boolean,
     ) {
-        receiveJob?.cancel()
+        receiveJob?.cancelAndJoin()
         receiveJob = null
-        parser.dropIncompleteFragment()
+        activeProtocolHandler?.stopSession()
+        activeProtocolHandler = null
         mutableUiState.update { it.copy(isReceiving = false, isImporting = false) }
         if (resumeIdleDrain && mutableUiState.value.connectionState == BluetoothConnectionState.CONNECTED) {
             ensureIdleDrainLoop()

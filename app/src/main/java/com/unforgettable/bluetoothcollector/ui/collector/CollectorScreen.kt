@@ -85,6 +85,7 @@ fun CollectorScreen(
     onDisconnectRequested: () -> Unit,
     onStartReceivingRequested: () -> Unit,
     onStopReceivingRequested: () -> Unit,
+    onSingleMeasureRequested: () -> Unit,
     onStartImportRequested: () -> Unit,
     onShareImportedFile: () -> Unit,
     onSaveToLocalRequested: () -> Unit,
@@ -167,6 +168,7 @@ fun CollectorScreen(
                             uiState = uiState,
                             onStartReceivingRequested = onStartReceivingRequested,
                             onStopReceivingRequested = onStopReceivingRequested,
+                            onSingleMeasureRequested = onSingleMeasureRequested,
                             onStartImportRequested = onStartImportRequested,
                             onClearRequested = onClearRequested,
                             onExportRequested = onExportRequested,
@@ -467,12 +469,14 @@ private fun DataActionPanel(
     uiState: CollectorUiState,
     onStartReceivingRequested: () -> Unit,
     onStopReceivingRequested: () -> Unit,
+    onSingleMeasureRequested: () -> Unit,
     onStartImportRequested: () -> Unit,
     onClearRequested: () -> Unit,
     onExportRequested: () -> Unit,
     onSaveToLocalRequested: () -> Unit,
 ) {
     val importProfile = uiState.currentImportProfile()
+    val isGeoCom = uiState.availableModels.firstOrNull { it.modelId == uiState.selectedModelId }?.firmwareFamily == "Captivate"
 
     PanelCard(
         title = "数据控制",
@@ -502,11 +506,22 @@ private fun DataActionPanel(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            FilledTonalButton(
-                onClick = onStartReceivingRequested,
-                enabled = uiState.connectionState == BluetoothConnectionState.CONNECTED && !uiState.isReceiving,
-            ) {
-                Text(text = importProfile.liveReceiveLabel)
+            if (isGeoCom) {
+                GeoComControlPanel(
+                    isConnected = uiState.connectionState == BluetoothConnectionState.CONNECTED,
+                    isMeasuring = uiState.isReceiving && !uiState.isImporting,
+                    onStartStopClick = {
+                        if (uiState.isReceiving) onStopReceivingRequested() else onStartReceivingRequested()
+                    },
+                    onSingleMeasureClick = onSingleMeasureRequested
+                )
+            } else {
+                FilledTonalButton(
+                    onClick = onStartReceivingRequested,
+                    enabled = uiState.connectionState == BluetoothConnectionState.CONNECTED && !uiState.isReceiving,
+                ) {
+                    Text(text = importProfile.liveReceiveLabel)
+                }
             }
             FilledTonalButton(
                 onClick = onStartImportRequested,
@@ -514,11 +529,13 @@ private fun DataActionPanel(
             ) {
                 Text(text = importProfile.actionLabel)
             }
-            OutlinedButton(
-                onClick = onStopReceivingRequested,
-                enabled = uiState.isReceiving,
-            ) {
-                Text(text = if (uiState.isImporting) "中止导入" else "停止接收")
+            if (!isGeoCom || uiState.isImporting) {
+                OutlinedButton(
+                    onClick = onStopReceivingRequested,
+                    enabled = uiState.isReceiving,
+                ) {
+                    Text(text = if (uiState.isImporting) "中止导入" else "停止接收")
+                }
             }
             OutlinedButton(
                 onClick = onClearRequested,
@@ -794,6 +811,12 @@ private fun PreviewRow(record: MeasurementRecord) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+            }
+            if (record.hzAngleRad != null) {
+                Spacer(modifier = Modifier.height(6.dp))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.16f))
+                Spacer(modifier = Modifier.height(6.dp))
+                GeoComMeasurementDisplay(measurement = record)
             }
         }
     }

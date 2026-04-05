@@ -29,8 +29,11 @@ import com.unforgettable.bluetoothcollector.data.bluetooth.BluetoothPermissionCh
 import com.unforgettable.bluetoothcollector.data.bluetooth.BondedDeviceManager
 import com.unforgettable.bluetoothcollector.data.bluetooth.PairingRequestCoordinator
 import com.unforgettable.bluetoothcollector.data.export.CsvExportWriter
+import com.unforgettable.bluetoothcollector.data.export.GeoComCsvExportWriter
 import com.unforgettable.bluetoothcollector.data.export.TxtExportWriter
 import com.unforgettable.bluetoothcollector.data.import_.ImportedArtifactStore
+import com.unforgettable.bluetoothcollector.data.protocol.DefaultProtocolHandlerFactory
+import com.unforgettable.bluetoothcollector.data.protocol.ProtocolHandlerFactory
 import com.unforgettable.bluetoothcollector.data.share.ShareLauncher
 import com.unforgettable.bluetoothcollector.data.storage.AppDatabase
 import com.unforgettable.bluetoothcollector.data.storage.CollectorRepository
@@ -72,6 +75,7 @@ fun CollectorRoute() {
             repository = dependencies.dataRepository,
             bluetoothController = bluetoothController,
             exportManager = dependencies.exportManager,
+            protocolHandlerFactory = dependencies.protocolHandlerFactory,
             timeProvider = dependencies.timeProvider,
             importDirectory = dependencies.importDirectory,
             importedArtifactStore = dependencies.importedArtifactStore,
@@ -180,6 +184,7 @@ fun CollectorRoute() {
         onDisconnectRequested = viewModel::onDisconnectRequested,
         onStartReceivingRequested = viewModel::onStartReceivingRequested,
         onStopReceivingRequested = viewModel::onStopReceivingRequested,
+        onSingleMeasureRequested = viewModel::onSingleMeasureRequested,
         onStartImportRequested = viewModel::onStartImportRequested,
         onShareImportedFile = viewModel::onShareImportedFile,
         onSaveToLocalRequested = viewModel::onSaveToLocalRequested,
@@ -194,6 +199,7 @@ private class CollectorViewModelFactory(
     private val repository: CollectorDataRepository,
     private val bluetoothController: CollectorBluetoothController,
     private val exportManager: CollectorExportManager,
+    private val protocolHandlerFactory: ProtocolHandlerFactory,
     private val timeProvider: CollectorTimeProvider,
     private val importDirectory: File,
     private val importedArtifactStore: ImportedArtifactStore,
@@ -207,6 +213,7 @@ private class CollectorViewModelFactory(
                 repository = repository,
                 bluetoothController = bluetoothController,
                 exportManager = exportManager,
+                protocolHandlerFactory = protocolHandlerFactory,
                 timeProvider = timeProvider,
                 importDirectory = importDirectory,
                 importedArtifactStore = importedArtifactStore,
@@ -360,6 +367,10 @@ private class AndroidCollectorBluetoothController(
         return connectionManager.drainIncomingBytes(maxBytes)
     }
 
+    override suspend fun sendBytes(data: ByteArray) {
+        connectionManager.sendBytes(data)
+    }
+
     override suspend fun blockingReadBytes(): ByteArray {
         return connectionManager.blockingReadBytes()
     }
@@ -378,6 +389,7 @@ private data class CollectorAppDependencies(
     val bluetoothController: AndroidCollectorBluetoothController,
     val dataRepository: CollectorDataRepository,
     val exportManager: CollectorExportManager,
+    val protocolHandlerFactory: ProtocolHandlerFactory,
     val shareLauncher: ShareLauncher,
     val timeProvider: CollectorTimeProvider,
     val importDirectory: File,
@@ -428,7 +440,7 @@ private object CollectorAppDependenciesHolder {
             context,
             AppDatabase::class.java,
             "collector.db",
-        ).build()
+        ).addMigrations(AppDatabase.MIGRATION_1_2).build()
         val collectorRepository = CollectorRepository.fromDatabase(database)
         val timeProvider = SystemCollectorTimeProvider()
 
@@ -442,9 +454,11 @@ private object CollectorAppDependenciesHolder {
             exportManager = DefaultCollectorExportManager(
                 exportDirectory = File(context.filesDir, "exports"),
                 csvExportWriter = CsvExportWriter(),
+                geoComCsvExportWriter = GeoComCsvExportWriter(),
                 txtExportWriter = TxtExportWriter(),
                 timeProvider = timeProvider,
             ),
+            protocolHandlerFactory = DefaultProtocolHandlerFactory(bluetoothController),
             shareLauncher = ShareLauncher(),
             timeProvider = timeProvider,
             importDirectory = File(context.filesDir, "imports"),
@@ -499,6 +513,7 @@ private class RoomCollectorDataRepository(
 private class DefaultCollectorExportManager(
     private val exportDirectory: File,
     private val csvExportWriter: CsvExportWriter,
+    private val geoComCsvExportWriter: GeoComCsvExportWriter,
     private val txtExportWriter: TxtExportWriter,
     private val timeProvider: CollectorTimeProvider,
 ) : CollectorExportManager {
@@ -509,12 +524,21 @@ private class DefaultCollectorExportManager(
     ): File {
         val exportedAt = OffsetDateTime.parse(timeProvider.now())
         return when (format) {
-            ExportFormat.CSV -> csvExportWriter.write(
-                directory = exportDirectory,
-                session = session,
-                records = records,
-                exportedAt = exportedAt,
-            )
+            ExportFormat.CSV -> if (records.any { it.protocolType == "GEOCOM" || it.hzAngleRad != null }) {
+                geoComCsvExportWriter.write(
+                    directory = exportDirectory,
+                    session = session,
+                    records = records,
+                    exportedAt = exportedAt,
+                )
+            } else {
+                csvExportWriter.write(
+                    directory = exportDirectory,
+                    session = session,
+                    records = records,
+                    exportedAt = exportedAt,
+                )
+            }
 
             ExportFormat.TXT -> txtExportWriter.write(
                 directory = exportDirectory,
@@ -566,6 +590,13 @@ private fun MeasurementRecordEntity.toDomain(): MeasurementRecord {
         rawPayload = rawPayload,
         parsedCode = parsedCode,
         parsedValue = parsedValue,
+        protocolType = protocolType,
+        hzAngleRad = hzAngleRad,
+        vAngleRad = vAngleRad,
+        slopeDistanceM = slopeDistanceM,
+        coordinateE = coordinateE,
+        coordinateN = coordinateN,
+        coordinateH = coordinateH,
     )
 }
 
@@ -582,5 +613,12 @@ private fun MeasurementRecord.toEntity(sessionId: String): MeasurementRecordEnti
         rawPayload = rawPayload,
         parsedCode = parsedCode,
         parsedValue = parsedValue,
+        protocolType = protocolType,
+        hzAngleRad = hzAngleRad,
+        vAngleRad = vAngleRad,
+        slopeDistanceM = slopeDistanceM,
+        coordinateE = coordinateE,
+        coordinateN = coordinateN,
+        coordinateH = coordinateH,
     )
 }

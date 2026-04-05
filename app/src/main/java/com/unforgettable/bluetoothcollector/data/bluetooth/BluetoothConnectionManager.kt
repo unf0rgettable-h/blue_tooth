@@ -10,7 +10,9 @@ import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import java.io.IOException
 import java.io.InputStream
+import java.io.OutputStream
 import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -25,6 +27,7 @@ class BluetoothConnectionManager(
     private val stateLock = Any()
     private var socket: BluetoothSocket? = null
     private var inputStream: InputStream? = null
+    private var outputStream: OutputStream? = null
     private var pendingSocket: BluetoothSocket? = null
     private var activeAttemptToken: Long = 0L
 
@@ -71,15 +74,18 @@ class BluetoothConnectionManager(
                 try {
                     newSocket.connect()
                     val newInputStream = newSocket.inputStream
+                    val newOutputStream = newSocket.outputStream
                     if (completed.compareAndSet(false, true)) {
-                        if (publishConnectedState(attemptToken, newSocket, newInputStream)) {
+                        if (publishConnectedState(attemptToken, newSocket, newInputStream, newOutputStream)) {
                             continuation.resume(Result.success(Unit)) { _, _, _ ->
                                 clearOwnedState(attemptToken)
                                 runCatching { newInputStream.close() }
+                                runCatching { newOutputStream.close() }
                                 runCatching { newSocket.close() }
                             }
                         } else {
                             runCatching { newInputStream.close() }
+                            runCatching { newOutputStream.close() }
                             runCatching { newSocket.close() }
                             if (continuation.isActive) {
                                 continuation.resume(Result.failure(IllegalStateException("bluetooth_connect_invalidated")))
@@ -137,6 +143,13 @@ class BluetoothConnectionManager(
         }.getOrDefault(ByteArray(0))
     }
 
+    @Throws(IOException::class)
+    suspend fun sendBytes(data: ByteArray) = withContext(Dispatchers.IO) {
+        val stream = outputStream ?: throw IOException("bluetooth_not_connected")
+        stream.write(data)
+        stream.flush()
+    }
+
     // Blocks until at least one byte arrives, or throws IOException on disconnect.
     // Use this in the active receive loop instead of drainIncomingBytes().
     suspend fun blockingReadBytes(bufferSize: Int = 4096): ByteArray = withContext(Dispatchers.IO) {
@@ -179,9 +192,11 @@ class BluetoothConnectionManager(
             activeAttemptToken += 1
             runCatching { pendingSocket?.close() }
             runCatching { inputStream?.close() }
+            runCatching { outputStream?.close() }
             runCatching { socket?.close() }
             pendingSocket = null
             inputStream = null
+            outputStream = null
             socket = null
         }
     }
@@ -223,12 +238,14 @@ class BluetoothConnectionManager(
         attemptToken: Long,
         newSocket: BluetoothSocket,
         newInputStream: InputStream,
+        newOutputStream: OutputStream,
     ): Boolean {
         synchronized(stateLock) {
             if (activeAttemptToken != attemptToken) return false
             pendingSocket = null
             socket = newSocket
             inputStream = newInputStream
+            outputStream = newOutputStream
             return true
         }
     }
@@ -239,6 +256,7 @@ class BluetoothConnectionManager(
                 pendingSocket = null
                 socket = null
                 inputStream = null
+                outputStream = null
             }
         }
     }

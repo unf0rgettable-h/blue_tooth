@@ -1,6 +1,8 @@
 package com.unforgettable.bluetoothcollector.ui.collector
 
 import com.unforgettable.bluetoothcollector.data.bluetooth.BluetoothConnectionState
+import com.unforgettable.bluetoothcollector.data.protocol.ProtocolHandler
+import com.unforgettable.bluetoothcollector.data.protocol.ProtocolHandlerFactory
 import com.unforgettable.bluetoothcollector.data.import_.ImportedArtifactStoreContract
 import com.unforgettable.bluetoothcollector.data.import_.ImportedFileFormat
 import com.unforgettable.bluetoothcollector.data.import_.ImportedFileInfo
@@ -18,6 +20,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestDispatcher
@@ -448,16 +451,123 @@ class CollectorViewModelTest {
         assertEquals(0, viewModel.uiState.value.previewRecords.size)
     }
 
+    @Test
+    fun start_receive_uses_protocol_handler_factory_and_appends_emitted_record() = runTest(mainDispatcherRule.dispatcher) {
+        val bluetooth = FakeCollectorBluetoothController(
+            pairedDevices = listOf(
+                BondedBluetoothDeviceItem(name = "Leica TS60", address = sampleBondedDevice().address),
+            ),
+        )
+        val protocolFactory = FakeProtocolHandlerFactory(
+            handler = FakeProtocolHandler(
+                emittedRecords = listOf(
+                    MeasurementRecord(
+                        id = "record-1",
+                        sequence = 1,
+                        receivedAt = "2026-03-31T10:15:00+08:00",
+                        instrumentBrand = "leica",
+                        instrumentModel = "TS60",
+                        bluetoothDeviceName = "Leica TS60",
+                        bluetoothDeviceAddress = sampleBondedDevice().address,
+                        rawPayload = "%R1P,0,0:0,1.0,2.0,3.0",
+                        parsedCode = "GEOCOM",
+                        parsedValue = "1.0,2.0,3.0",
+                        protocolType = "GEOCOM",
+                        hzAngleRad = 1.0,
+                        vAngleRad = 2.0,
+                        slopeDistanceM = 3.0,
+                    ),
+                ),
+            ),
+        )
+        val viewModel = createViewModel(
+            repository = FakeCollectorDataRepository(),
+            bluetooth = bluetooth,
+            protocolHandlerFactory = protocolFactory,
+        )
+
+        viewModel.onInstrumentBrandSelected("leica")
+        viewModel.onInstrumentModelSelected("TS60")
+        viewModel.onConnectRequested(sampleBondedDevice().address)
+        repeat(3) { runCurrent() }
+
+        viewModel.onStartReceivingRequested()
+        repeat(5) { runCurrent() }
+
+        assertEquals("TS60", protocolFactory.createdModel?.modelId)
+        assertEquals(1, viewModel.uiState.value.previewRecords.size)
+        assertEquals("GEOCOM", viewModel.uiState.value.previewRecords.single().protocolType)
+
+        viewModel.onDisconnectRequested()
+        repeat(3) { runCurrent() }
+    }
+
+    @Test
+    fun single_measure_uses_active_protocol_handler_and_appends_record() = runTest(mainDispatcherRule.dispatcher) {
+        val bluetooth = FakeCollectorBluetoothController(
+            pairedDevices = listOf(
+                BondedBluetoothDeviceItem(name = "Leica TS60", address = sampleBondedDevice().address),
+            ),
+        )
+        val protocolHandler = FakeProtocolHandler(
+            keepAlive = true,
+            singleMeasurement = MeasurementRecord(
+                id = "record-1",
+                sequence = 1,
+                receivedAt = "2026-03-31T10:15:00+08:00",
+                instrumentBrand = "leica",
+                instrumentModel = "TS60",
+                bluetoothDeviceName = "Leica TS60",
+                bluetoothDeviceAddress = sampleBondedDevice().address,
+                rawPayload = "%R1P,0,0:0,1.0,2.0,3.0",
+                parsedCode = "GEOCOM",
+                parsedValue = "1.0,2.0,3.0",
+                protocolType = "GEOCOM",
+                hzAngleRad = 1.0,
+                vAngleRad = 2.0,
+                slopeDistanceM = 3.0,
+            ),
+        )
+        val protocolFactory = FakeProtocolHandlerFactory(handler = protocolHandler)
+        val repository = FakeCollectorDataRepository()
+        val viewModel = createViewModel(
+            repository = repository,
+            bluetooth = bluetooth,
+            protocolHandlerFactory = protocolFactory,
+        )
+
+        viewModel.onInstrumentBrandSelected("leica")
+        viewModel.onInstrumentModelSelected("TS60")
+        viewModel.onConnectRequested(sampleBondedDevice().address)
+        repeat(3) { runCurrent() }
+
+        viewModel.onStartReceivingRequested()
+        repeat(3) { runCurrent() }
+
+        viewModel.onSingleMeasureRequested()
+        repeat(3) { runCurrent() }
+
+        assertEquals(1, protocolHandler.singleMeasurementCalls)
+        assertEquals(1, viewModel.uiState.value.previewRecords.size)
+        assertEquals("GEOCOM", viewModel.uiState.value.previewRecords.single().protocolType)
+        assertEquals(1, repository.currentRecords().size)
+
+        viewModel.onDisconnectRequested()
+        repeat(3) { runCurrent() }
+    }
+
     private fun createViewModel(
         repository: FakeCollectorDataRepository = FakeCollectorDataRepository(),
         bluetooth: FakeCollectorBluetoothController = FakeCollectorBluetoothController(),
         exporter: FakeCollectorExportManager = FakeCollectorExportManager(),
         importedArtifactStore: FakeImportedArtifactStore? = null,
+        protocolHandlerFactory: FakeProtocolHandlerFactory = FakeProtocolHandlerFactory(),
     ): CollectorViewModel {
         return CollectorViewModel(
             repository = repository,
             bluetoothController = bluetooth,
             exportManager = exporter,
+            protocolHandlerFactory = protocolHandlerFactory,
             timeProvider = FakeCollectorTimeProvider(),
             importDirectory = java.io.File(System.getProperty("java.io.tmpdir"), "test-imports"),
             importedArtifactStore = importedArtifactStore,
@@ -583,6 +693,8 @@ private class FakeCollectorDataRepository(
         clearCalls += 1
         current = null
     }
+
+    fun currentRecords(): List<MeasurementRecord> = current?.records.orEmpty()
 }
 
 private class FakeCollectorBluetoothController(
@@ -653,6 +765,8 @@ private class FakeCollectorBluetoothController(
 
     override suspend fun drainIncomingBytes(maxBytes: Int): ByteArray = ByteArray(0)
 
+    override suspend fun sendBytes(data: ByteArray) = Unit
+
     override suspend fun blockingReadBytes(): ByteArray {
         queuedBlockingReads.removeFirstOrNull()?.let { return it }
         blockingReadFailure?.let { throw it }
@@ -681,6 +795,46 @@ private class FakeCollectorExportManager(
         )
         return exportedFile
     }
+}
+
+private class FakeProtocolHandlerFactory(
+    private val handler: ProtocolHandler = FakeProtocolHandler(),
+) : ProtocolHandlerFactory {
+    var createdModel: com.unforgettable.bluetoothcollector.domain.model.InstrumentModel? = null
+
+    override fun create(
+        model: com.unforgettable.bluetoothcollector.domain.model.InstrumentModel,
+        session: Session,
+        startingSequence: Long,
+        timeProvider: () -> String,
+        onOverflow: () -> Unit,
+    ): ProtocolHandler {
+        createdModel = model
+        return handler
+    }
+}
+
+private class FakeProtocolHandler(
+    private val emittedRecords: List<MeasurementRecord> = emptyList(),
+    private val keepAlive: Boolean = false,
+    private val singleMeasurement: MeasurementRecord? = null,
+) : ProtocolHandler {
+    var singleMeasurementCalls: Int = 0
+        private set
+
+    override fun startSession() = flow {
+        emittedRecords.forEach { emit(it) }
+        if (keepAlive) {
+            awaitCancellation()
+        }
+    }
+
+    override suspend fun triggerSingleMeasurement(): MeasurementRecord? {
+        singleMeasurementCalls += 1
+        return singleMeasurement
+    }
+
+    override fun stopSession() = Unit
 }
 
 private class FakeCollectorTimeProvider : CollectorTimeProvider {

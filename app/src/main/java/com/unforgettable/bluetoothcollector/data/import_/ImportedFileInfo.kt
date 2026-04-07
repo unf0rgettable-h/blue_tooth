@@ -1,6 +1,7 @@
 package com.unforgettable.bluetoothcollector.data.import_
 
 import java.io.File
+import java.nio.charset.Charset
 
 data class ImportedFileInfo(
     val file: File,
@@ -22,8 +23,8 @@ enum class ImportedFileFormat(
     UNKNOWN("未知", "dat", "application/octet-stream");
 
     companion object {
-        fun detect(header: ByteArray): ImportedFileFormat {
-            val text = header.toString(Charsets.UTF_8).trimStart()
+        fun detect(header: ByteArray, charset: Charset = Charset.forName("GBK")): ImportedFileFormat {
+            val text = header.toString(charset).trimStart()
             return when {
                 text.startsWith("<?xml") || text.startsWith("<LandXML") -> XML
                 Regex("^\\*?\\d{6}[+\\-]").containsMatchIn(text) -> GSI

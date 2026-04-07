@@ -28,11 +28,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -146,11 +145,7 @@ class CollectorViewModel(
     private var idleDrainJob: Job? = null
     private var activeProtocolHandler: ProtocolHandler? = null
 
-    val uiState: StateFlow<CollectorUiState> = mutableUiState.stateIn(
-        scope = scope,
-        started = SharingStarted.Eagerly,
-        initialValue = mutableUiState.value,
-    )
+    val uiState: StateFlow<CollectorUiState> = mutableUiState.asStateFlow()
     val events: Flow<CollectorUiEvent> = mutableEvents.asSharedFlow()
 
     init {
@@ -733,7 +728,10 @@ class CollectorViewModel(
             return
         }
         val header = bytes.copyOf(minOf(bytes.size, 512))
-        val format = com.unforgettable.bluetoothcollector.data.import_.ImportedFileFormat.detect(header)
+        val modelCharset = java.nio.charset.Charset.forName(
+            currentInstrumentModel()?.dataCharsetName ?: "GBK",
+        )
+        val format = com.unforgettable.bluetoothcollector.data.import_.ImportedFileFormat.detect(header, modelCharset)
         val receivedAt = timeProvider.now()
         val fileName = "import-${receivedAt.replace(Regex("[^0-9T]"), "")}.${format.extension}"
         val dir = importDirectory.also { it.mkdirs() }

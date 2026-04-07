@@ -4,6 +4,7 @@ import com.unforgettable.bluetoothcollector.data.bluetooth.TextStreamRecordParse
 import com.unforgettable.bluetoothcollector.domain.model.DelimiterStrategy
 import com.unforgettable.bluetoothcollector.domain.model.MeasurementRecord
 import com.unforgettable.bluetoothcollector.domain.model.Session
+import java.nio.charset.Charset
 import java.util.UUID
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.Flow
@@ -16,6 +17,7 @@ class PassiveStreamProtocolHandler(
     private val delimiterStrategy: DelimiterStrategy,
     private val session: Session,
     private val startingSequence: Long,
+    private val dataCharset: Charset = Charset.forName("GBK"),
     private val timeProvider: () -> String,
     private val idProvider: () -> String = { "${session.sessionId}-${UUID.randomUUID()}" },
     private val onOverflow: () -> Unit = {},
@@ -32,7 +34,7 @@ class PassiveStreamProtocolHandler(
             if (incoming.isEmpty()) continue
 
             val parseResult = parser.accept(
-                chunk = incoming.toString(Charsets.UTF_8),
+                chunk = incoming.toString(dataCharset),
                 delimiterStrategy = delimiterStrategy,
             )
             if (parseResult.overflowed) {

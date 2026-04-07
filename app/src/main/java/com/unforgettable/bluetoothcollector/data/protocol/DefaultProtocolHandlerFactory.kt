@@ -4,6 +4,7 @@ import com.unforgettable.bluetoothcollector.data.bluetooth.TextStreamRecordParse
 import com.unforgettable.bluetoothcollector.data.protocol.geocom.GeoComClient
 import com.unforgettable.bluetoothcollector.domain.model.InstrumentModel
 import com.unforgettable.bluetoothcollector.domain.model.Session
+import java.nio.charset.Charset
 
 class DefaultProtocolHandlerFactory(
     private val transport: ProtocolTransport,
@@ -29,6 +30,7 @@ class DefaultProtocolHandlerFactory(
                 delimiterStrategy = model.delimiterStrategy,
                 session = session,
                 startingSequence = startingSequence,
+                dataCharset = Charset.forName(model.dataCharsetName),
                 timeProvider = timeProvider,
                 onOverflow = onOverflow,
             )

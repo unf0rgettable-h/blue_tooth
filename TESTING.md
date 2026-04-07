@@ -20,10 +20,10 @@ This document provides a comprehensive testing checklist for v1.4.1, which inclu
 ### 1. Install APK
 ```bash
 # Download from GitHub release
-wget https://github.com/unf0rgettable-h/blue_tooth/releases/download/v1.4.1/app-release-v1.4.1-signed.apk
+wget https://github.com/unf0rgettable-h/blue_tooth/releases/download/v1.4.1/survlink.apk
 
 # Install via adb
-adb install app-release-v1.4.1-signed.apk
+adb install survlink.apk
 
 # Or manually install on device
 ```

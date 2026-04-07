@@ -1,6 +1,6 @@
 # SurvLink Roadmap
 
-## Current Version: v1.4.0
+## Current Version: v1.4.1
 
 ### ✅ Completed Features
 

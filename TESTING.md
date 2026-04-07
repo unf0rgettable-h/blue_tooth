@@ -1,8 +1,8 @@
-# Hardware Testing Guide - v1.4.0
+# Hardware Testing Guide - v1.4.1
 
 ## Overview
 
-This document provides a comprehensive testing checklist for v1.4.0 GeoCOM protocol support with real hardware.
+This document provides a comprehensive testing checklist for v1.4.1, which includes bug fixes for Chinese character encoding and UI state management discovered during field testing.
 
 ## Test Environment
 
@@ -20,10 +20,10 @@ This document provides a comprehensive testing checklist for v1.4.0 GeoCOM proto
 ### 1. Install APK
 ```bash
 # Download from GitHub release
-wget https://github.com/unf0rgettable-h/blue_tooth/releases/download/v1.4.0/app-release-v1.4.0-signed.apk
+wget https://github.com/unf0rgettable-h/blue_tooth/releases/download/v1.4.1/app-release-v1.4.1-signed.apk
 
 # Install via adb
-adb install app-release-v1.4.0-signed.apk
+adb install app-release-v1.4.1-signed.apk
 
 # Or manually install on device
 ```
@@ -31,7 +31,7 @@ adb install app-release-v1.4.0-signed.apk
 ### 2. Verify Installation
 - [ ] App icon appears in launcher
 - [ ] App opens without crash
-- [ ] Version shows "1.4.0" in app info
+- [ ] Version shows "1.4.1" in app info
 
 ### 3. Grant Permissions
 - [ ] Bluetooth permission granted

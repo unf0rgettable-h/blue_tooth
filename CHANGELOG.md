@@ -5,6 +5,19 @@ All notable changes to SurvLink will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.1] - 2026-04-08
+
+### Fixed
+
+- **Chinese character encoding (乱码)**: TS09 real-time transmission and file import now correctly decode GBK-encoded Chinese point names and descriptions. Previously hard-coded UTF-8 caused garbled text for all Chinese-market instruments.
+- **Stop button always disabled**: Fixed state propagation issue where the "停止接收" button remained unresponsive after starting data reception. Replaced `stateIn(scope)` with `asStateFlow()` to eliminate IO-dispatcher delay in UI state updates.
+
+### Changed
+
+- Added `dataCharsetName` field to `InstrumentModel` with GBK default, enabling per-model charset configuration
+- `PassiveStreamProtocolHandler` now accepts configurable charset for byte-to-string conversion
+- `ImportedFileFormat.detect()` now accepts charset parameter for correct file header parsing
+
 ## [1.4.0] - 2026-04-05
 
 ### Added - GeoCOM Protocol Support 🎉
@@ -187,6 +200,7 @@ Leica Captivate instruments (TS60, TS16, TS50, MS60) now have full bidirectional
 
 ---
 
+[1.4.1]: https://github.com/unf0rgettable-h/blue_tooth/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/unf0rgettable-h/blue_tooth/compare/v1.3.3...v1.4.0
 [1.3.3]: https://github.com/unf0rgettable-h/blue_tooth/compare/v1.3.2...v1.3.3
 [1.3.2]: https://github.com/unf0rgettable-h/blue_tooth/compare/v1.3.1...v1.3.2

@@ -1,6 +1,7 @@
 package com.unforgettable.bluetoothcollector.ui.collector
 
 import com.unforgettable.bluetoothcollector.data.bluetooth.BluetoothConnectionState
+import com.unforgettable.bluetoothcollector.data.bluetooth.ReceiverState
 import com.unforgettable.bluetoothcollector.data.import_.ImportedFileInfo
 import com.unforgettable.bluetoothcollector.data.import_.ImportProfile
 import com.unforgettable.bluetoothcollector.data.import_.ImportProfileRegistry
@@ -39,6 +40,7 @@ data class CollectorUiState(
     val exportFormatOptions: List<ExportFormat> = listOf(ExportFormat.CSV, ExportFormat.TXT),
     val permissionState: CollectorPermissionUiState = CollectorPermissionUiState(),
     val statusMessage: String? = null,
+    val receiverState: ReceiverState = ReceiverState.Idle,
 )
 
 fun CollectorUiState.filteredModels(): List<InstrumentModel> {

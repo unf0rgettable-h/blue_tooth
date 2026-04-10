@@ -1,5 +1,7 @@
 package com.unforgettable.bluetoothcollector.data.import_
 
+import com.unforgettable.bluetoothcollector.data.bluetooth.TransportConnectionMode
+
 enum class ImportProfileVerdict {
     SUPPORTED,
     GUIDANCE_ONLY,
@@ -14,4 +16,6 @@ data class ImportProfile(
     val actionLabel: String,
     val guidanceMessage: String,
     val protocolSummary: String,
+    val executionMode: ImportExecutionMode = ImportExecutionMode.GUIDANCE_ONLY,
+    val transportMode: TransportConnectionMode = TransportConnectionMode.CLIENT,
 )

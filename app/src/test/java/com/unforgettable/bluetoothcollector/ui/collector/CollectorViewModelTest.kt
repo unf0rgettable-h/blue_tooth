@@ -6,6 +6,7 @@ import com.unforgettable.bluetoothcollector.data.protocol.ProtocolHandlerFactory
 import com.unforgettable.bluetoothcollector.data.import_.ImportedArtifactStoreContract
 import com.unforgettable.bluetoothcollector.data.import_.ImportedFileFormat
 import com.unforgettable.bluetoothcollector.data.import_.ImportedFileInfo
+import com.unforgettable.bluetoothcollector.data.import_.ImportProfileVerdict
 import com.unforgettable.bluetoothcollector.domain.model.BondedBluetoothDeviceItem
 import com.unforgettable.bluetoothcollector.domain.model.DelimiterStrategy
 import com.unforgettable.bluetoothcollector.domain.model.DiscoveredBluetoothDeviceItem
@@ -14,6 +15,7 @@ import com.unforgettable.bluetoothcollector.domain.model.MeasurementRecord
 import com.unforgettable.bluetoothcollector.domain.model.Session
 import java.io.File
 import java.io.IOException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -124,6 +126,7 @@ class CollectorViewModelTest {
         } finally {
             viewModel.onDisconnectRequested()
             advanceUntilIdle()
+            disposeViewModel(viewModel)
         }
     }
 
@@ -277,18 +280,18 @@ class CollectorViewModelTest {
         viewModel.onInstrumentModelSelected("TS02")
         viewModel.onConnectRequested(sampleBondedDevice().address)
         advanceUntilIdle()
-        try {
-            viewModel.onStartImportRequested()
-            advanceUntilIdle()
-
-            viewModel.onStartReceivingRequested()
-            advanceUntilIdle()
-
-            assertEquals("receive_conflicts_with_import", viewModel.uiState.value.statusMessage)
-        } finally {
-            viewModel.onDisconnectRequested()
-            advanceUntilIdle()
+        forceUiState(viewModel) {
+            it.copy(
+                isReceiving = true,
+                isImporting = true,
+                connectionState = BluetoothConnectionState.CONNECTED,
+            )
         }
+
+        viewModel.onStartReceivingRequested()
+        advanceUntilIdle()
+
+        assertEquals("receive_conflicts_with_import", viewModel.uiState.value.statusMessage)
     }
 
     @Test
@@ -367,17 +370,22 @@ class CollectorViewModelTest {
         viewModel.onInstrumentModelSelected("TS02")
         viewModel.onConnectRequested(sampleBondedDevice().address)
         advanceUntilIdle()
-        viewModel.onStartImportRequested()
-        advanceUntilIdle()
+        forceUiState(viewModel) {
+            it.copy(
+                isReceiving = true,
+                isImporting = true,
+                connectionState = BluetoothConnectionState.CONNECTED,
+            )
+        }
 
         viewModel.onDisconnectRequested()
-        advanceUntilIdle()
+        repeat(3) { runCurrent() }
 
         assertEquals(sampleImportedArtifact().file.absolutePath, viewModel.uiState.value.importedFileInfo?.file?.absolutePath)
     }
 
     @Test
-    fun ts60_profile_is_supported_and_exposes_captivate_status_message() = runTest(mainDispatcherRule.dispatcher) {
+    fun ts60_profile_is_guidance_only_and_exposes_captivate_status_message() = runTest(mainDispatcherRule.dispatcher) {
         val bluetooth = FakeCollectorBluetoothController(
             pairedDevices = listOf(sampleBondedDevice()),
         )
@@ -393,9 +401,36 @@ class CollectorViewModelTest {
 
         val importProfile = viewModel.uiState.value.currentImportProfile()
 
+        assertEquals(ImportProfileVerdict.GUIDANCE_ONLY, importProfile.verdict)
         assertEquals("接收实时GSI数据", importProfile.liveReceiveLabel)
-        assertEquals("接收导出数据", importProfile.actionLabel)
-        assertEquals("Captivate 导出 / GSI output", importProfile.protocolSummary)
+        assertEquals("查看导出说明", importProfile.actionLabel)
+        assertEquals("Captivate 独立路径", importProfile.protocolSummary)
+    }
+
+    @Test
+    fun stop_import_disconnects_transport_before_waiting_for_receive_job() = runTest(mainDispatcherRule.dispatcher) {
+        val bluetooth = FakeCollectorBluetoothController(
+            pairedDevices = listOf(sampleBondedDevice()),
+        )
+        val viewModel = createViewModel(
+            repository = FakeCollectorDataRepository(),
+            bluetooth = bluetooth,
+        )
+
+        viewModel.onInstrumentBrandSelected("leica")
+        viewModel.onInstrumentModelSelected("TS09")
+        viewModel.onConnectRequested(sampleBondedDevice().address)
+        advanceUntilIdle()
+
+        viewModel.onStartImportRequested()
+        runCurrent()
+
+        assertTrue(viewModel.uiState.value.isImporting)
+
+        viewModel.onStopReceivingRequested()
+        runCurrent()
+
+        assertEquals(1, bluetooth.disconnectCalls)
     }
 
     @Ignore("Needs a more deterministic transport fake to avoid hanging the unit-test harness")
@@ -623,6 +658,23 @@ class CollectorViewModelTest {
             receivedAt = "2026-04-03T21:00:00+08:00",
         )
     }
+
+    private fun disposeViewModel(viewModel: CollectorViewModel) {
+        val onCleared = CollectorViewModel::class.java.getDeclaredMethod("onCleared")
+        onCleared.isAccessible = true
+        onCleared.invoke(viewModel)
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun forceUiState(
+        viewModel: CollectorViewModel,
+        transform: (CollectorUiState) -> CollectorUiState,
+    ) {
+        val stateField = CollectorViewModel::class.java.getDeclaredField("mutableUiState")
+        stateField.isAccessible = true
+        val stateFlow = stateField.get(viewModel) as MutableStateFlow<CollectorUiState>
+        stateFlow.value = transform(stateFlow.value)
+    }
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -710,6 +762,7 @@ private class FakeCollectorBluetoothController(
     private val mutablePermissionState = MutableStateFlow(CollectorPermissionUiState())
     private val queuedBlockingReads = blockingReadSequence
     private val blockingReadFailure = blockingReadFailureAfterSequence
+    private val disconnectSignal = CompletableDeferred<Unit>()
 
     override val nearbyDevices: StateFlow<List<DiscoveredBluetoothDeviceItem>> = mutableNearbyDevices
     override val pairedDevices: StateFlow<List<BondedBluetoothDeviceItem>> = mutablePairedDevices
@@ -718,6 +771,7 @@ private class FakeCollectorBluetoothController(
     override val controllerEvents = emptyFlow<CollectorBluetoothControllerEvent>()
 
     val connectRequests = mutableListOf<String>()
+    var disconnectCalls: Int = 0
     var cancelDiscoveryCalls: Int = 0
 
     override fun refreshPermissionState() = Unit
@@ -761,19 +815,28 @@ private class FakeCollectorBluetoothController(
         return true
     }
 
-    override suspend fun disconnect() = Unit
+    override suspend fun disconnect() {
+        disconnectCalls += 1
+        disconnectSignal.complete(Unit)
+    }
 
-    override suspend fun drainIncomingBytes(maxBytes: Int): ByteArray = ByteArray(0)
+    override suspend fun drainIncomingBytes(maxBytes: Int): ByteArray {
+        kotlinx.coroutines.awaitCancellation()
+    }
 
     override suspend fun sendBytes(data: ByteArray) = Unit
 
     override suspend fun blockingReadBytes(): ByteArray {
         queuedBlockingReads.removeFirstOrNull()?.let { return it }
         blockingReadFailure?.let { throw it }
-        awaitCancellation()
+        disconnectSignal.await()
+        throw IOException("bluetooth_not_connected")
     }
 
-    override suspend fun blockingReadBytesWithTimeout(timeoutMs: Long): ByteArray? = null
+    override suspend fun blockingReadBytesWithTimeout(timeoutMs: Long): ByteArray? {
+        kotlinx.coroutines.delay(timeoutMs)
+        return null
+    }
 
     override fun shutdown() = Unit
 }

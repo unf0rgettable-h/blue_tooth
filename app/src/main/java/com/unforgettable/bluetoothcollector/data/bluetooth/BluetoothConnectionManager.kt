@@ -152,10 +152,11 @@ class BluetoothConnectionManager(
 
     // Blocks until at least one byte arrives, or throws IOException on disconnect.
     // Use this in the active receive loop instead of drainIncomingBytes().
+    // Uses runInterruptible so coroutine cancellation can interrupt the blocking read.
     suspend fun blockingReadBytes(bufferSize: Int = 4096): ByteArray = withContext(Dispatchers.IO) {
         val stream = inputStream ?: return@withContext ByteArray(0)
         val buffer = ByteArray(bufferSize)
-        val bytesRead = stream.read(buffer)
+        val bytesRead = runInterruptible { stream.read(buffer) }
         if (bytesRead <= 0) ByteArray(0) else buffer.copyOf(bytesRead)
     }
 

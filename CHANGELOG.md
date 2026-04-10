@@ -5,6 +5,60 @@ All notable changes to SurvLink will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.1] - 2026-04-11
+
+### Critical Fixes
+
+#### Stop / Import Deadlock (TS09 Blocking Bug)
+- **Root cause**: `stopReceivingInternal()` called `cancelAndJoin()` on the receive job, but the underlying `InputStream.read()` in `rawFileReceiveLoop()` is a native blocking call that does not respond to coroutine cancellation. The "停止接收" button appeared frozen.
+- **Fix**: Replaced `cancelAndJoin()` with a three-phase stop: `cancel()` → `disconnect()` (for import mode, to break the blocking read) → `join()`. This ensures the stop button always works.
+- Upgraded `blockingReadBytes()` to use `runInterruptible` for cancellation-friendly blocking I/O.
+- Replaced standalone `CoroutineScope(SupervisorJob())` for receive/import/idleDrain jobs with `scope.launch(receiveDispatcher)` to fix coroutine lifecycle under test dispatchers.
+
+#### GBK Chinese Character Encoding (TS09 Field Bug)
+- **Root cause**: Imported files and live receive stream were decoded as UTF-8, causing Chinese characters in instrument data to display as garbled text (乱码).
+- **Fix**: Full GBK charset pipeline — `InstrumentModel.dataCharsetName` defaults to `"GBK"`, `PassiveStreamProtocolHandler` accepts a `dataCharset` parameter, `DefaultProtocolHandlerFactory` passes model charset, and `ImportedFileFormat.detect()` defaults to GBK header decoding.
+
+### Added
+
+#### TS09 / TS60 Transport Architecture Split
+- **`TransportConnectionMode`** enum: `CLIENT` (TS09 — app initiates connection) vs `RECEIVER` (TS60 — app listens for inbound connection)
+- **`ImportExecutionMode`** enum: `CLIENT_STREAM`, `RECEIVER_STREAM`, `GUIDANCE_ONLY`
+- **`ImportProfile`** extended with `executionMode` and `transportMode` fields
+- TS09 profiles now explicitly declare `CLIENT_STREAM` / `CLIENT` mode
+- TS60 profiles explicitly declare `GUIDANCE_ONLY` / `RECEIVER` mode
+- These two instrument families no longer share a single import assumption
+
+#### Experimental TS60 RFCOMM Receiver Mode
+- **`BluetoothReceiverManager`**: Opens an RFCOMM server socket (`listenUsingRfcommWithServiceRecord`) and `accept()`s incoming connections from the instrument
+- **`ReceiverState`** sealed interface: `Idle → Listening → Receiving → Completed / Failed / Cancelled`
+- **UI**: New "实验性接收模式" panel on the Data page for Captivate firmware instruments with "开始监听" / "停止监听" controls and real-time byte count display
+- **Permission**: Added `BLUETOOTH_ADVERTISE` to AndroidManifest for Android 12+ discoverability
+- **Important**: This feature is marked **experimental** and has NOT been field-validated with a real TS60. It is implemented based on Android RFCOMM server API and Leica Captivate documentation research, but the actual TS60 connection behavior remains unproven.
+
+### Changed
+- Version bump to v1.4.1 (versionCode 9)
+- `ImportProfileRegistry`: TS60 profile explicitly sets `executionMode = GUIDANCE_ONLY`, `transportMode = RECEIVER`
+- ViewModel test fakes now use `awaitCancellation()` for `drainIncomingBytes` and `delay(timeoutMs)` for `blockingReadBytesWithTimeout`, preventing test harness deadlocks
+- Reverted `gradle-wrapper.properties` to upstream HTTPS distribution URL (was accidentally set to a local file path)
+
+### Testing
+- All existing ViewModel tests restored to green (previously hung indefinitely)
+- Added `TransportConnectionModeTest`, `ReceiverStateTest`, `ImportExecutionModeTest`
+- Updated `ImportProfileRegistryTest` to verify `executionMode` and `transportMode` fields
+- Updated `PassiveStreamProtocolHandlerTest` with GBK Chinese character decoding test
+- Compile verified: debug + release + unit test Kotlin
+
+### Known Limitations (Pending Field Validation)
+- TS60 receiver mode requires real hardware to confirm:
+  - Whether TS60 initiates RFCOMM toward the phone during ASCII export
+  - Whether standard SPP UUID is used vs Leica-specific
+  - Whether secure vs insecure RFCOMM matters
+  - Whether discoverability alone is sufficient or prior pairing + device configuration is mandatory
+- TS09 stop/import fix requires field confirmation of disconnect/reconnect recovery
+
+---
+
 ## [1.4.0] - 2026-04-05
 
 ### Added - GeoCOM Protocol Support 🎉
@@ -187,6 +241,7 @@ Leica Captivate instruments (TS60, TS16, TS50, MS60) now have full bidirectional
 
 ---
 
+[1.4.1]: https://github.com/unf0rgettable-h/blue_tooth/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/unf0rgettable-h/blue_tooth/compare/v1.3.3...v1.4.0
 [1.3.3]: https://github.com/unf0rgettable-h/blue_tooth/compare/v1.3.2...v1.3.3
 [1.3.2]: https://github.com/unf0rgettable-h/blue_tooth/compare/v1.3.1...v1.3.2

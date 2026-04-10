@@ -2,7 +2,7 @@
 
 Android app for receiving measurement data from total stations via Bluetooth. Built for surveyors who need a simple, reliable way to get data off their instruments and onto their phones.
 
-> Latest release: `v1.4.0` — **GeoCOM Protocol Support for Leica Captivate Instruments**
+> Latest release: `v1.4.1` — **Field-tested bug fixes: Chinese encoding & UI state management**
 
 ## What it does
 

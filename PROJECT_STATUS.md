@@ -1,8 +1,8 @@
-# SurvLink v1.4.0 - Project Status Report
+# SurvLink v1.4.1 - Project Status Report
 
-**Date**: 2026-04-05  
-**Version**: 1.4.0 (versionCode 8)  
-**Status**: ✅ Ready for Hardware Testing
+**Date**: 2026-04-08  
+**Version**: 1.4.1 (versionCode 9)  
+**Status**: ✅ Field-tested, Bug Fixes Applied
 
 ---
 

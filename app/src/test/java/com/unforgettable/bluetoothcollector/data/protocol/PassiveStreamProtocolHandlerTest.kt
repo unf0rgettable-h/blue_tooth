@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import java.nio.charset.Charset
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class PassiveStreamProtocolHandlerTest {
@@ -55,6 +56,27 @@ class PassiveStreamProtocolHandlerTest {
         val record = handler.triggerSingleMeasurement()
 
         assertEquals(null, record)
+    }
+
+    @Test
+    fun startSession_decodes_gbk_chinese_characters_correctly() = runTest {
+        val gbk = Charset.forName("GBK")
+        val chinesePayload = "01测试点\n".toByteArray(gbk)
+
+        val handler = PassiveStreamProtocolHandler(
+            transport = SingleReadProtocolTransport(chinesePayload),
+            parser = TextStreamRecordParser(),
+            delimiterStrategy = DelimiterStrategy.LINE_DELIMITED,
+            session = sampleSession(),
+            startingSequence = 0L,
+            dataCharset = gbk,
+            timeProvider = { "2026-03-31T10:00:01+08:00" },
+            idProvider = { "record-1" },
+        )
+
+        val record = handler.startSession().first()
+
+        assertEquals("01测试点", record.rawPayload)
     }
 }
 

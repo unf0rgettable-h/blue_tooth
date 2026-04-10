@@ -3,6 +3,8 @@ package com.unforgettable.bluetoothcollector.ui.collector
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.unforgettable.bluetoothcollector.data.bluetooth.BluetoothConnectionState
+import com.unforgettable.bluetoothcollector.data.bluetooth.BluetoothReceiverManager
+import com.unforgettable.bluetoothcollector.data.bluetooth.ReceiverState
 import com.unforgettable.bluetoothcollector.data.instrument.InstrumentCatalog
 import com.unforgettable.bluetoothcollector.data.import_.ImportedArtifactStoreContract
 import com.unforgettable.bluetoothcollector.data.import_.ImportProfileVerdict
@@ -22,7 +24,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -134,6 +135,7 @@ class CollectorViewModel(
     private val timeProvider: CollectorTimeProvider,
     private val importDirectory: java.io.File,
     private val importedArtifactStore: ImportedArtifactStoreContract? = null,
+    private val receiverManager: BluetoothReceiverManager? = null,
     private val downloadsSaver: com.unforgettable.bluetoothcollector.data.share.DownloadsSaver? = null,
     private val appContext: android.content.Context? = null,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
@@ -143,6 +145,7 @@ class CollectorViewModel(
     private val mutableUiState = MutableStateFlow(CollectorUiState())
     private val mutableEvents = MutableSharedFlow<CollectorUiEvent>(extraBufferCapacity = 1)
     private var receiveJob: Job? = null
+    private var receiverJob: Job? = null
     private var idleDrainJob: Job? = null
     private var activeProtocolHandler: ProtocolHandler? = null
 
@@ -209,6 +212,13 @@ class CollectorViewModel(
                             )
                         }
                     }
+                }
+            }
+        }
+        receiverManager?.let { manager ->
+            scope.launch {
+                manager.receiverState.collectLatest { state ->
+                    mutableUiState.update { it.copy(receiverState = state) }
                 }
             }
         }
@@ -424,8 +434,8 @@ class CollectorViewModel(
 
     fun onDisconnectRequested() {
         scope.launch {
-            stopReceivingInternal(resumeIdleDrain = false)
             bluetoothController.disconnect()
+            stopReceivingInternal(resumeIdleDrain = false)
             mutableUiState.update {
                 it.copy(
                     connectionState = BluetoothConnectionState.DISCONNECTED,
@@ -474,7 +484,7 @@ class CollectorViewModel(
                 )
             }
             cancelIdleDrain()
-            receiveJob = CoroutineScope(SupervisorJob() + receiveDispatcher).launch {
+            receiveJob = scope.launch(receiveDispatcher) {
                 collectProtocolSession(activeSession, handler)
             }
         }
@@ -507,7 +517,7 @@ class CollectorViewModel(
             if (receiveJob?.isActive == true) {
                 return@launch
             }
-            receiveJob = CoroutineScope(SupervisorJob() + receiveDispatcher).launch {
+            receiveJob = scope.launch(receiveDispatcher) {
                 rawFileReceiveLoop()
             }
         }
@@ -757,6 +767,48 @@ class CollectorViewModel(
         ensureIdleDrainLoop()
     }
 
+    // --- Experimental TS60 RFCOMM Receiver Mode ---
+
+    fun onStartReceiverRequested() {
+        val manager = receiverManager ?: return
+        if (uiState.value.isReceiving || uiState.value.isImporting) {
+            mutableUiState.update { it.copy(statusMessage = "receiver_conflicts_with_active_operation") }
+            return
+        }
+        if (receiverJob?.isActive == true) return
+
+        manager.resetState()
+        receiverJob = scope.launch {
+            val file = manager.listenAndReceive(
+                importDirectory = importDirectory,
+                timeProvider = timeProvider::now,
+            )
+            if (file != null) {
+                val header = file.readBytes().copyOf(minOf(file.length().toInt(), 512))
+                val format = com.unforgettable.bluetoothcollector.data.import_.ImportedFileFormat.detect(header)
+                val info = com.unforgettable.bluetoothcollector.data.import_.ImportedFileInfo(
+                    file = file,
+                    sizeBytes = file.length(),
+                    format = format,
+                    receivedAt = timeProvider.now(),
+                )
+                importedArtifactStore?.save(info)
+                mutableUiState.update {
+                    it.copy(
+                        importedFileInfo = info,
+                        statusMessage = "实验性接收完成：${format.displayName}（${formatFileSize(file.length())}）",
+                    )
+                }
+            }
+        }
+    }
+
+    fun onStopReceiverRequested() {
+        receiverManager?.cancel()
+        receiverJob?.cancel()
+        receiverJob = null
+    }
+
     fun onShareImportedFile() {
         val info = uiState.value.importedFileInfo ?: return
         mutableEvents.tryEmit(CollectorUiEvent.ShareImportedFile(file = info.file, mimeType = info.format.mimeType))
@@ -793,7 +845,7 @@ class CollectorViewModel(
         if (mutableUiState.value.connectionState != BluetoothConnectionState.CONNECTED || mutableUiState.value.isReceiving) {
             return
         }
-        idleDrainJob = CoroutineScope(SupervisorJob() + receiveDispatcher).launch {
+        idleDrainJob = scope.launch(receiveDispatcher) {
             while (!mutableUiState.value.isReceiving &&
                 mutableUiState.value.connectionState == BluetoothConnectionState.CONNECTED
             ) {
@@ -811,7 +863,21 @@ class CollectorViewModel(
     private suspend fun stopReceivingInternal(
         resumeIdleDrain: Boolean,
     ) {
-        receiveJob?.cancelAndJoin()
+        val wasImporting = mutableUiState.value.isImporting
+        // Cancel the coroutine first (non-blocking signal).
+        receiveJob?.cancel()
+        // If importing, the receive loop is stuck in a native blocking read that
+        // does not respond to coroutine cancellation alone. Disconnect the transport
+        // to break the blocking InputStream.read().
+        if (wasImporting) {
+            bluetoothController.disconnect()
+            mutableUiState.update {
+                it.copy(connectionState = BluetoothConnectionState.DISCONNECTED)
+            }
+        }
+        // Now that the stream is closed (import) or timeout will fire (live receive),
+        // the job will finish promptly.
+        receiveJob?.join()
         receiveJob = null
         activeProtocolHandler?.stopSession()
         activeProtocolHandler = null
@@ -825,6 +891,8 @@ class CollectorViewModel(
 
     override fun onCleared() {
         receiveJob?.cancel()
+        receiverJob?.cancel()
+        receiverManager?.cancel()
         idleDrainJob?.cancel()
         bluetoothController.shutdown()
         scope.cancel()

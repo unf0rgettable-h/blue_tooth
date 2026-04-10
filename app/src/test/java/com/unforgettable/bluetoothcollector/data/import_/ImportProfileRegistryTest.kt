@@ -1,5 +1,6 @@
 package com.unforgettable.bluetoothcollector.data.import_
 
+import com.unforgettable.bluetoothcollector.data.bluetooth.TransportConnectionMode
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -15,6 +16,8 @@ class ImportProfileRegistryTest {
         assertEquals(ImportProfileVerdict.SUPPORTED, profile.verdict)
         assertEquals("开始接收", profile.liveReceiveLabel)
         assertEquals("导入存储数据", profile.actionLabel)
+        assertEquals(ImportExecutionMode.CLIENT_STREAM, profile.executionMode)
+        assertEquals(TransportConnectionMode.CLIENT, profile.transportMode)
     }
 
     @Test
@@ -24,10 +27,12 @@ class ImportProfileRegistryTest {
             modelId = "TS60",
         )
 
-        assertEquals(ImportProfileVerdict.SUPPORTED, profile.verdict)
+        assertEquals(ImportProfileVerdict.GUIDANCE_ONLY, profile.verdict)
         assertEquals("接收实时GSI数据", profile.liveReceiveLabel)
-        assertEquals("接收导出数据", profile.actionLabel)
-        assertEquals("Captivate 导出 / GSI output", profile.protocolSummary)
+        assertEquals("查看导出说明", profile.actionLabel)
+        assertEquals("Captivate 独立路径", profile.protocolSummary)
+        assertEquals(ImportExecutionMode.GUIDANCE_ONLY, profile.executionMode)
+        assertEquals(TransportConnectionMode.RECEIVER, profile.transportMode)
     }
 
     @Test
@@ -39,5 +44,6 @@ class ImportProfileRegistryTest {
 
         assertEquals(ImportProfileVerdict.UNSUPPORTED, profile.verdict)
         assertEquals("查看限制说明", profile.actionLabel)
+        assertEquals(ImportExecutionMode.GUIDANCE_ONLY, profile.executionMode)
     }
 }

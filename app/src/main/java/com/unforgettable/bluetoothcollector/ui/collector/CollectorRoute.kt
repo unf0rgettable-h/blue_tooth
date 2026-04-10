@@ -26,6 +26,7 @@ import androidx.room.Room
 import com.unforgettable.bluetoothcollector.data.bluetooth.BluetoothConnectionManager
 import com.unforgettable.bluetoothcollector.data.bluetooth.BluetoothDiscoveryManager
 import com.unforgettable.bluetoothcollector.data.bluetooth.BluetoothPermissionChecker
+import com.unforgettable.bluetoothcollector.data.bluetooth.BluetoothReceiverManager
 import com.unforgettable.bluetoothcollector.data.bluetooth.BondedDeviceManager
 import com.unforgettable.bluetoothcollector.data.bluetooth.PairingRequestCoordinator
 import com.unforgettable.bluetoothcollector.data.export.CsvExportWriter
@@ -79,6 +80,7 @@ fun CollectorRoute() {
             timeProvider = dependencies.timeProvider,
             importDirectory = dependencies.importDirectory,
             importedArtifactStore = dependencies.importedArtifactStore,
+            receiverManager = dependencies.receiverManager,
             downloadsSaver = dependencies.downloadsSaver,
             appContext = appContext,
         )
@@ -186,6 +188,8 @@ fun CollectorRoute() {
         onStopReceivingRequested = viewModel::onStopReceivingRequested,
         onSingleMeasureRequested = viewModel::onSingleMeasureRequested,
         onStartImportRequested = viewModel::onStartImportRequested,
+        onStartReceiverRequested = viewModel::onStartReceiverRequested,
+        onStopReceiverRequested = viewModel::onStopReceiverRequested,
         onShareImportedFile = viewModel::onShareImportedFile,
         onSaveToLocalRequested = viewModel::onSaveToLocalRequested,
         onClearRequested = viewModel::onClearRequested,
@@ -203,6 +207,7 @@ private class CollectorViewModelFactory(
     private val timeProvider: CollectorTimeProvider,
     private val importDirectory: File,
     private val importedArtifactStore: ImportedArtifactStore,
+    private val receiverManager: BluetoothReceiverManager,
     private val downloadsSaver: com.unforgettable.bluetoothcollector.data.share.DownloadsSaver,
     private val appContext: Context,
 ) : ViewModelProvider.Factory {
@@ -217,6 +222,7 @@ private class CollectorViewModelFactory(
                 timeProvider = timeProvider,
                 importDirectory = importDirectory,
                 importedArtifactStore = importedArtifactStore,
+                receiverManager = receiverManager,
                 downloadsSaver = downloadsSaver,
                 appContext = appContext,
             ) as T
@@ -394,6 +400,7 @@ private data class CollectorAppDependencies(
     val timeProvider: CollectorTimeProvider,
     val importDirectory: File,
     val importedArtifactStore: ImportedArtifactStore,
+    val receiverManager: BluetoothReceiverManager,
     val downloadsSaver: com.unforgettable.bluetoothcollector.data.share.DownloadsSaver,
 )
 
@@ -463,6 +470,10 @@ private object CollectorAppDependenciesHolder {
             timeProvider = timeProvider,
             importDirectory = File(context.filesDir, "imports"),
             importedArtifactStore = ImportedArtifactStore(File(context.filesDir, "imports")),
+            receiverManager = BluetoothReceiverManager(
+                bluetoothAdapter = bluetoothAdapter,
+                permissionChecker = permissionChecker,
+            ),
             downloadsSaver = com.unforgettable.bluetoothcollector.data.share.DownloadsSaver(),
         )
     }

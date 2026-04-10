@@ -52,6 +52,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.unforgettable.bluetoothcollector.data.bluetooth.BluetoothConnectionState
+import com.unforgettable.bluetoothcollector.data.bluetooth.ReceiverState
 import com.unforgettable.bluetoothcollector.data.import_.ImportedFileInfo
 import com.unforgettable.bluetoothcollector.domain.model.BondedBluetoothDeviceItem
 import com.unforgettable.bluetoothcollector.domain.model.DiscoveredBluetoothDeviceItem
@@ -87,6 +88,8 @@ fun CollectorScreen(
     onStopReceivingRequested: () -> Unit,
     onSingleMeasureRequested: () -> Unit,
     onStartImportRequested: () -> Unit,
+    onStartReceiverRequested: () -> Unit,
+    onStopReceiverRequested: () -> Unit,
     onShareImportedFile: () -> Unit,
     onSaveToLocalRequested: () -> Unit,
     onClearRequested: () -> Unit,
@@ -173,6 +176,14 @@ fun CollectorScreen(
                             onClearRequested = onClearRequested,
                             onExportRequested = onExportRequested,
                             onSaveToLocalRequested = onSaveToLocalRequested,
+                        )
+                        ReceiverModePanel(
+                            receiverState = uiState.receiverState,
+                            isCaptivateFirmware = uiState.availableModels.firstOrNull {
+                                it.modelId == uiState.selectedModelId
+                            }?.firmwareFamily == "Captivate",
+                            onStartReceiver = onStartReceiverRequested,
+                            onStopReceiver = onStopReceiverRequested,
                         )
                         ImportedFilePanel(
                             fileInfo = uiState.importedFileInfo,
@@ -562,6 +573,87 @@ private fun DataActionPanel(
                 }
             }
         }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ReceiverModePanel(
+    receiverState: ReceiverState,
+    isCaptivateFirmware: Boolean,
+    onStartReceiver: () -> Unit,
+    onStopReceiver: () -> Unit,
+) {
+    if (!isCaptivateFirmware && receiverState is ReceiverState.Idle) return
+
+    PanelCard(
+        title = "实验性接收模式",
+        subtitle = "TS60/Captivate：手机作为蓝牙服务端，等待仪器主动连入并发送数据。此功能尚未经实地验证。",
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.25f),
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Text(
+                    text = "状态：${receiverState.toDisplayText()}",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                if (receiverState is ReceiverState.Receiving) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "已接收 ${receiverState.bytesReceived} 字节",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (receiverState is ReceiverState.Failed) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "错误：${receiverState.reason}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(10.dp))
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            FilledTonalButton(
+                onClick = onStartReceiver,
+                enabled = receiverState is ReceiverState.Idle ||
+                    receiverState is ReceiverState.Completed ||
+                    receiverState is ReceiverState.Failed ||
+                    receiverState is ReceiverState.Cancelled,
+            ) {
+                Text(text = "开始监听")
+            }
+            OutlinedButton(
+                onClick = onStopReceiver,
+                enabled = receiverState is ReceiverState.Listening ||
+                    receiverState is ReceiverState.Receiving ||
+                    receiverState is ReceiverState.RequestingDiscoverability,
+            ) {
+                Text(text = "停止监听")
+            }
+        }
+    }
+}
+
+private fun ReceiverState.toDisplayText(): String {
+    return when (this) {
+        is ReceiverState.Idle -> "空闲"
+        is ReceiverState.RequestingDiscoverability -> "请求可发现性..."
+        is ReceiverState.Listening -> "等待仪器连接..."
+        is ReceiverState.Receiving -> "正在接收数据..."
+        is ReceiverState.Completed -> "接收完成（${bytesReceived} 字节）"
+        is ReceiverState.Failed -> "失败"
+        is ReceiverState.Cancelled -> "已取消"
     }
 }
 

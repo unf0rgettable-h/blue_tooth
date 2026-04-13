@@ -663,6 +663,35 @@ class CollectorViewModelTest {
     }
 
     @Test
+    fun receiver_link_disconnect_broadcast_does_not_override_success_status() = runTest(mainDispatcherRule.dispatcher) {
+        val bluetooth = FakeCollectorBluetoothController()
+        val receiverManager = FakeBluetoothReceiverController()
+        val completedFile = File.createTempFile("receiver-success", ".txt").apply {
+            writeText("TS60 EXPORT")
+            deleteOnExit()
+        }
+        receiverManager.nextFile = completedFile
+        val viewModel = createViewModel(
+            bluetooth = bluetooth,
+            receiverManager = receiverManager,
+        )
+
+        viewModel.onInstrumentBrandSelected("leica")
+        viewModel.onInstrumentModelSelected("TS60")
+        advanceUntilIdle()
+
+        viewModel.onReceiverDiscoverabilityGranted(120)
+        advanceUntilIdle()
+        val completedStatus = viewModel.uiState.value.statusMessage
+
+        bluetooth.emitControllerEvent(CollectorBluetoothControllerEvent.LinkLost)
+        advanceUntilIdle()
+
+        assertEquals(completedStatus, viewModel.uiState.value.statusMessage)
+        assertEquals(completedFile.absolutePath, viewModel.uiState.value.importedFileInfo?.file?.absolutePath)
+    }
+
+    @Test
     fun receiver_mode_is_rejected_for_non_ts60_profiles() = runTest(mainDispatcherRule.dispatcher) {
         val receiverManager = FakeBluetoothReceiverController()
         val viewModel = createViewModel(receiverManager = receiverManager)
@@ -961,6 +990,7 @@ private class FakeBluetoothReceiverController : BluetoothReceiverController {
     private val mutableReceiverState = MutableStateFlow<ReceiverState>(ReceiverState.Idle)
     override val receiverState: StateFlow<ReceiverState> = mutableReceiverState
     var listenCalls: Int = 0
+    var nextFile: File? = null
 
     override suspend fun listenAndReceive(
         importDirectory: File,
@@ -970,7 +1000,14 @@ private class FakeBluetoothReceiverController : BluetoothReceiverController {
     ): File? {
         listenCalls += 1
         mutableReceiverState.value = ReceiverState.Listening
-        return null
+        val result = nextFile
+        if (result != null) {
+            mutableReceiverState.value = ReceiverState.Completed(
+                bytesReceived = result.length(),
+                fileName = result.name,
+            )
+        }
+        return result
     }
 
     override fun cancel() {

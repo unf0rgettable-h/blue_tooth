@@ -17,6 +17,7 @@ import com.unforgettable.bluetoothcollector.domain.model.Session
 data class CollectorPermissionUiState(
     val canDiscover: Boolean = true,
     val canConnect: Boolean = true,
+    val canAdvertise: Boolean = true,
     val bluetoothEnabled: Boolean = true,
 )
 
@@ -41,6 +42,8 @@ data class CollectorUiState(
     val permissionState: CollectorPermissionUiState = CollectorPermissionUiState(),
     val statusMessage: String? = null,
     val receiverState: ReceiverState = ReceiverState.Idle,
+    val isReceiverDiscoverable: Boolean = false,
+    val receiverDiagnostics: List<String> = emptyList(),
 )
 
 fun CollectorUiState.filteredModels(): List<InstrumentModel> {
@@ -57,4 +60,24 @@ fun CollectorUiState.currentImportProfile(): ImportProfile {
         brandId = selectedBrandId,
         modelId = selectedModelId,
     )
+}
+
+fun CollectorUiState.usesReceiverImportMode(): Boolean {
+    return currentImportProfile().executionMode == com.unforgettable.bluetoothcollector.data.import_.ImportExecutionMode.RECEIVER_STREAM
+}
+
+fun CollectorUiState.canStartPrimaryImportAction(): Boolean {
+    return when (currentImportProfile().executionMode) {
+        com.unforgettable.bluetoothcollector.data.import_.ImportExecutionMode.CLIENT_STREAM ->
+            connectionState == BluetoothConnectionState.CONNECTED && !isReceiving
+
+        com.unforgettable.bluetoothcollector.data.import_.ImportExecutionMode.RECEIVER_STREAM ->
+            receiverState is ReceiverState.Idle ||
+                receiverState is ReceiverState.Completed ||
+                receiverState is ReceiverState.Failed ||
+                receiverState is ReceiverState.Cancelled
+
+        com.unforgettable.bluetoothcollector.data.import_.ImportExecutionMode.GUIDANCE_ONLY ->
+            connectionState == BluetoothConnectionState.CONNECTED && !isReceiving
+    }
 }

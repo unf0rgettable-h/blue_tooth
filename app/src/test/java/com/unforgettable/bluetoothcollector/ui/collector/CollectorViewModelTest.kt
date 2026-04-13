@@ -1,6 +1,9 @@
 package com.unforgettable.bluetoothcollector.ui.collector
 
 import com.unforgettable.bluetoothcollector.data.bluetooth.BluetoothConnectionState
+import com.unforgettable.bluetoothcollector.data.bluetooth.BluetoothReceiverController
+import com.unforgettable.bluetoothcollector.data.bluetooth.ReceiverState
+import com.unforgettable.bluetoothcollector.data.import_.BluetoothClientImportController
 import com.unforgettable.bluetoothcollector.data.protocol.ProtocolHandler
 import com.unforgettable.bluetoothcollector.data.protocol.ProtocolHandlerFactory
 import com.unforgettable.bluetoothcollector.data.import_.ImportedArtifactStoreContract
@@ -18,6 +21,7 @@ import java.io.IOException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
@@ -385,7 +389,7 @@ class CollectorViewModelTest {
     }
 
     @Test
-    fun ts60_profile_is_guidance_only_and_exposes_captivate_status_message() = runTest(mainDispatcherRule.dispatcher) {
+    fun ts60_profile_exposes_experimental_receiver_import_path() = runTest(mainDispatcherRule.dispatcher) {
         val bluetooth = FakeCollectorBluetoothController(
             pairedDevices = listOf(sampleBondedDevice()),
         )
@@ -401,10 +405,10 @@ class CollectorViewModelTest {
 
         val importProfile = viewModel.uiState.value.currentImportProfile()
 
-        assertEquals(ImportProfileVerdict.GUIDANCE_ONLY, importProfile.verdict)
+        assertEquals(ImportProfileVerdict.EXPERIMENTAL, importProfile.verdict)
         assertEquals("接收实时GSI数据", importProfile.liveReceiveLabel)
-        assertEquals("查看导出说明", importProfile.actionLabel)
-        assertEquals("Captivate 独立路径", importProfile.protocolSummary)
+        assertEquals("启动导出接收", importProfile.actionLabel)
+        assertEquals("Captivate 蓝牙导出到手机", importProfile.protocolSummary)
     }
 
     @Test
@@ -421,11 +425,13 @@ class CollectorViewModelTest {
         viewModel.onInstrumentModelSelected("TS09")
         viewModel.onConnectRequested(sampleBondedDevice().address)
         advanceUntilIdle()
-
-        viewModel.onStartImportRequested()
-        runCurrent()
-
-        assertTrue(viewModel.uiState.value.isImporting)
+        forceUiState(viewModel) {
+            it.copy(
+                isReceiving = true,
+                isImporting = true,
+                connectionState = BluetoothConnectionState.CONNECTED,
+            )
+        }
 
         viewModel.onStopReceivingRequested()
         runCurrent()
@@ -591,12 +597,115 @@ class CollectorViewModelTest {
         repeat(3) { runCurrent() }
     }
 
+    @Test
+    fun receiver_discoverability_request_and_denial_are_reflected_in_ui_state() = runTest(mainDispatcherRule.dispatcher) {
+        val receiverManager = FakeBluetoothReceiverController()
+        val viewModel = createViewModel(receiverManager = receiverManager)
+
+        viewModel.onReceiverDiscoverabilityRequested()
+        advanceUntilIdle()
+
+        assertEquals(ReceiverState.RequestingDiscoverability, viewModel.uiState.value.receiverState)
+        assertEquals("receiver_discoverable_requested", viewModel.uiState.value.statusMessage)
+
+        viewModel.onReceiverDiscoverabilityDenied()
+        advanceUntilIdle()
+
+        assertEquals(ReceiverState.Idle, viewModel.uiState.value.receiverState)
+        assertFalse(viewModel.uiState.value.isReceiverDiscoverable)
+        assertEquals("receiver_discoverable_denied", viewModel.uiState.value.statusMessage)
+    }
+
+    @Test
+    fun receiver_discoverability_granted_disconnects_existing_client_before_listening() = runTest(mainDispatcherRule.dispatcher) {
+        val bluetooth = FakeCollectorBluetoothController(
+            pairedDevices = listOf(sampleBondedDevice()),
+        )
+        val receiverManager = FakeBluetoothReceiverController()
+        val viewModel = createViewModel(
+            bluetooth = bluetooth,
+            receiverManager = receiverManager,
+        )
+
+        viewModel.onInstrumentBrandSelected("leica")
+        viewModel.onInstrumentModelSelected("TS60")
+        viewModel.onConnectRequested(sampleBondedDevice().address)
+        advanceUntilIdle()
+        assertEquals(BluetoothConnectionState.CONNECTED, viewModel.uiState.value.connectionState)
+
+        viewModel.onReceiverDiscoverabilityGranted(120)
+        advanceUntilIdle()
+
+        assertEquals(1, bluetooth.disconnectCalls)
+        assertEquals(1, receiverManager.listenCalls)
+        assertEquals(BluetoothConnectionState.DISCONNECTED, viewModel.uiState.value.connectionState)
+        assertTrue(viewModel.uiState.value.isReceiverDiscoverable)
+        assertEquals("receiver_discoverable_enabled_120s", viewModel.uiState.value.statusMessage)
+    }
+
+    @Test
+    fun receiver_discoverability_granted_adds_ts60_pairing_and_spp_diagnostics() = runTest(mainDispatcherRule.dispatcher) {
+        val receiverManager = FakeBluetoothReceiverController()
+        val viewModel = createViewModel(receiverManager = receiverManager)
+
+        viewModel.onInstrumentBrandSelected("leica")
+        viewModel.onInstrumentModelSelected("TS60")
+        advanceUntilIdle()
+
+        viewModel.onReceiverDiscoverabilityGranted(300)
+        advanceUntilIdle()
+
+        val diagnostics = viewModel.uiState.value.receiverDiagnostics.joinToString("\n")
+        assertTrue(diagnostics.contains("300s"))
+        assertTrue(diagnostics.contains("SPP UUID"))
+        assertTrue(diagnostics.contains("secure / insecure"))
+        assertTrue(diagnostics.contains("配对"))
+    }
+
+    @Test
+    fun receiver_mode_is_rejected_for_non_ts60_profiles() = runTest(mainDispatcherRule.dispatcher) {
+        val receiverManager = FakeBluetoothReceiverController()
+        val viewModel = createViewModel(receiverManager = receiverManager)
+
+        viewModel.onInstrumentBrandSelected("leica")
+        viewModel.onInstrumentModelSelected("TS09")
+        advanceUntilIdle()
+
+        viewModel.onStartReceiverRequested()
+        advanceUntilIdle()
+
+        assertEquals(0, receiverManager.listenCalls)
+        assertEquals("receiver_mode_not_supported_for_selected_model", viewModel.uiState.value.statusMessage)
+    }
+
+    @Test
+    fun discoverability_lifecycle_updates_ui_when_scan_mode_changes() = runTest(mainDispatcherRule.dispatcher) {
+        val bluetooth = FakeCollectorBluetoothController()
+        val viewModel = createViewModel(bluetooth = bluetooth)
+        advanceUntilIdle()
+
+        bluetooth.emitControllerEvent(
+            CollectorBluetoothControllerEvent.DiscoverabilityChanged(isDiscoverable = true),
+        )
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.isReceiverDiscoverable)
+
+        bluetooth.emitControllerEvent(
+            CollectorBluetoothControllerEvent.DiscoverabilityChanged(isDiscoverable = false),
+        )
+        advanceUntilIdle()
+        assertFalse(viewModel.uiState.value.isReceiverDiscoverable)
+        assertEquals("receiver_discoverable_expired", viewModel.uiState.value.statusMessage)
+    }
+
     private fun createViewModel(
         repository: FakeCollectorDataRepository = FakeCollectorDataRepository(),
         bluetooth: FakeCollectorBluetoothController = FakeCollectorBluetoothController(),
         exporter: FakeCollectorExportManager = FakeCollectorExportManager(),
         importedArtifactStore: FakeImportedArtifactStore? = null,
         protocolHandlerFactory: FakeProtocolHandlerFactory = FakeProtocolHandlerFactory(),
+        clientImportManager: BluetoothClientImportController? = null,
+        receiverManager: FakeBluetoothReceiverController? = null,
     ): CollectorViewModel {
         return CollectorViewModel(
             repository = repository,
@@ -606,6 +715,8 @@ class CollectorViewModelTest {
             timeProvider = FakeCollectorTimeProvider(),
             importDirectory = java.io.File(System.getProperty("java.io.tmpdir"), "test-imports"),
             importedArtifactStore = importedArtifactStore,
+            clientImportManager = clientImportManager,
+            receiverManager = receiverManager,
             ioDispatcher = mainDispatcherRule.dispatcher,
             receiveDispatcher = mainDispatcherRule.dispatcher,
         )
@@ -760,6 +871,7 @@ private class FakeCollectorBluetoothController(
     private val mutablePairedDevices = MutableStateFlow(pairedDevices)
     private val mutableIsDiscovering = MutableStateFlow(isDiscoveringInitially)
     private val mutablePermissionState = MutableStateFlow(CollectorPermissionUiState())
+    private val mutableControllerEvents = MutableSharedFlow<CollectorBluetoothControllerEvent>(extraBufferCapacity = 1)
     private val queuedBlockingReads = blockingReadSequence
     private val blockingReadFailure = blockingReadFailureAfterSequence
     private val disconnectSignal = CompletableDeferred<Unit>()
@@ -768,7 +880,7 @@ private class FakeCollectorBluetoothController(
     override val pairedDevices: StateFlow<List<BondedBluetoothDeviceItem>> = mutablePairedDevices
     override val isDiscovering: StateFlow<Boolean> = mutableIsDiscovering
     override val permissionState: StateFlow<CollectorPermissionUiState> = mutablePermissionState
-    override val controllerEvents = emptyFlow<CollectorBluetoothControllerEvent>()
+    override val controllerEvents = mutableControllerEvents
 
     val connectRequests = mutableListOf<String>()
     var disconnectCalls: Int = 0
@@ -839,6 +951,35 @@ private class FakeCollectorBluetoothController(
     }
 
     override fun shutdown() = Unit
+
+    fun emitControllerEvent(event: CollectorBluetoothControllerEvent) {
+        mutableControllerEvents.tryEmit(event)
+    }
+}
+
+private class FakeBluetoothReceiverController : BluetoothReceiverController {
+    private val mutableReceiverState = MutableStateFlow<ReceiverState>(ReceiverState.Idle)
+    override val receiverState: StateFlow<ReceiverState> = mutableReceiverState
+    var listenCalls: Int = 0
+
+    override suspend fun listenAndReceive(
+        importDirectory: File,
+        timeProvider: () -> String,
+        silenceTimeoutMs: Long,
+        maxBytes: Int,
+    ): File? {
+        listenCalls += 1
+        mutableReceiverState.value = ReceiverState.Listening
+        return null
+    }
+
+    override fun cancel() {
+        mutableReceiverState.value = ReceiverState.Cancelled
+    }
+
+    override fun resetState() {
+        mutableReceiverState.value = ReceiverState.Idle
+    }
 }
 
 private class FakeCollectorExportManager(

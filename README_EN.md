@@ -2,7 +2,7 @@
 
 Android app for receiving measurement data from total stations via Bluetooth. Built for surveyors who need a simple, reliable way to get data off their instruments and onto their phones.
 
-> Latest release: `v1.4.1` — **Field-tested bug fixes: Chinese encoding & UI state management**
+> Latest release: `v1.5.0` — **TS09/TS60 export-path split, TS09 import completion fix, TS60 experimental export receiver, UTF-8 BOM export compatibility**
 
 ## What it does
 
@@ -16,7 +16,7 @@ Connect your phone to a total station over classic Bluetooth, then:
 - **Real-time angle display**: View horizontal/vertical angles and slope distance instantly
 - **Multi-unit export**: CSV export includes angles in radians, degrees, and gon
 
-**Batch file import** — use the Data page to enter the model-aware import flow. TS09 keeps the current whole-file import path. TS60 now supports both legacy import and live GeoCOM measurement.
+**Batch file import / export to phone** — use the Data page to enter the model-aware flow. TS09 keeps the connected client import path. TS60 now exposes an experimental export receiver mode for instrument-to-phone transfer.
 
 **Export & share** — export collected records as CSV or TXT, share via any Android app, or save directly to the Downloads folder.
 
@@ -58,7 +58,7 @@ All instruments communicate over classic Bluetooth Serial Port Profile (SPP).
 
 ### Install from release
 
-Download `app-release-test-signed.apk` from the [Releases](https://github.com/unf0rgettable-h/blue_tooth/releases) page. Enable "Install from unknown sources" on your Android device.
+Download `survlink-v1.5.0-signed.apk` from the [Releases](https://github.com/unf0rgettable-h/blue_tooth/releases) page. Enable "Install from unknown sources" on your Android device.
 
 ### Build from source
 

@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothServerSocket
 import android.bluetooth.BluetoothSocket
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -16,6 +17,21 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
 import java.util.UUID
+
+interface BluetoothReceiverController {
+    val receiverState: StateFlow<ReceiverState>
+
+    suspend fun listenAndReceive(
+        importDirectory: File,
+        timeProvider: () -> String,
+        silenceTimeoutMs: Long = BluetoothReceiverManager.SILENCE_TIMEOUT_MS,
+        maxBytes: Int = BluetoothReceiverManager.MAX_RECEIVE_BYTES,
+    ): File?
+
+    fun cancel()
+
+    fun resetState()
+}
 
 /**
  * Experimental RFCOMM server socket manager for TS60 receiver mode.
@@ -30,9 +46,9 @@ import java.util.UUID
 class BluetoothReceiverManager(
     private val bluetoothAdapter: BluetoothAdapter?,
     private val permissionChecker: BluetoothPermissionChecker,
-) {
+) : BluetoothReceiverController {
     private val mutableReceiverState = MutableStateFlow<ReceiverState>(ReceiverState.Idle)
-    val receiverState: StateFlow<ReceiverState> = mutableReceiverState.asStateFlow()
+    override val receiverState: StateFlow<ReceiverState> = mutableReceiverState.asStateFlow()
 
     @Volatile
     private var serverSocket: BluetoothServerSocket? = null
@@ -52,48 +68,33 @@ class BluetoothReceiverManager(
      * @return the received file, or null if cancelled/no data
      */
     @SuppressLint("MissingPermission")
-    suspend fun listenAndReceive(
+    override suspend fun listenAndReceive(
         importDirectory: File,
         timeProvider: () -> String,
-        silenceTimeoutMs: Long = SILENCE_TIMEOUT_MS,
-        maxBytes: Int = MAX_RECEIVE_BYTES,
+        silenceTimeoutMs: Long,
+        maxBytes: Int,
     ): File? = withContext(Dispatchers.IO) {
+        Log.i(TAG, "receiver start requested")
         val adapter = bluetoothAdapter
         if (adapter == null) {
+            Log.w(TAG, "receiver start failed: bluetooth adapter unavailable")
             mutableReceiverState.value = ReceiverState.Failed("bluetooth_adapter_not_available")
             return@withContext null
         }
         if (!permissionChecker.currentState().canConnect) {
+            Log.w(TAG, "receiver start failed: missing BLUETOOTH_CONNECT permission")
             mutableReceiverState.value = ReceiverState.Failed("missing_bluetooth_connect_permission")
             return@withContext null
         }
+        Log.i(
+            TAG,
+            "receiver compatibility profile: adapterName=${safeAdapterName(adapter)}, service=$SERVICE_NAME, sppUuid=$SPP_UUID, modes=secure+insecure",
+        )
+        Log.i(TAG, "receiver note: secure RFCOMM may require prior pairing; insecure fallback will be attempted")
 
-        // Open server socket
-        val server = try {
-            adapter.listenUsingRfcommWithServiceRecord(SERVICE_NAME, SPP_UUID)
-        } catch (e: IOException) {
-            mutableReceiverState.value = ReceiverState.Failed("rfcomm_server_open_failed: ${e.message}")
-            return@withContext null
-        }
-        serverSocket = server
-        mutableReceiverState.value = ReceiverState.Listening
-
-        // Accept incoming connection (blocking)
-        val client: BluetoothSocket = try {
-            runInterruptible { server.accept() }
-        } catch (e: IOException) {
-            closeServerSocket()
-            if (!currentCoroutineContext().isActive) {
-                mutableReceiverState.value = ReceiverState.Cancelled
-            } else {
-                mutableReceiverState.value = ReceiverState.Failed("accept_failed: ${e.message}")
-            }
-            return@withContext null
-        } finally {
-            // Close server socket after accepting one connection
-            closeServerSocket()
-        }
+        val client = acceptIncomingClient(adapter) ?: return@withContext null
         acceptedSocket = client
+        Log.i(TAG, "receiver accepted remote device: ${describeRemoteDevice(client)}")
 
         // Read incoming data
         val buffer = ByteArrayOutputStream()
@@ -105,11 +106,13 @@ class BluetoothReceiverManager(
             // Wait for first byte (indefinite)
             val firstRead = runInterruptible { inputStream.read(readBuffer) }
             if (firstRead <= 0) {
+                Log.w(TAG, "receiver connected but no data was received")
                 mutableReceiverState.value = ReceiverState.Failed("no_data_received")
                 closeAcceptedSocket()
                 return@withContext null
             }
             buffer.write(readBuffer, 0, firstRead)
+            Log.i(TAG, "receiver first byte chunk received: $firstRead bytes")
             mutableReceiverState.value = ReceiverState.Receiving(bytesReceived = buffer.size().toLong())
 
             // Continue reading with silence-based completion
@@ -133,16 +136,18 @@ class BluetoothReceiverManager(
                 if (available == -1) break // silence → transmission complete
                 if (available <= 0) break
                 buffer.write(readBuffer, 0, available)
+                Log.i(TAG, "receiver total bytes received: ${buffer.size()}")
                 mutableReceiverState.value = ReceiverState.Receiving(bytesReceived = buffer.size().toLong())
             }
-        } catch (_: IOException) {
-            // Connection lost during read
+        } catch (error: IOException) {
+            Log.w(TAG, "receiver read interrupted: ${error.message}")
         } finally {
             closeAcceptedSocket()
         }
 
         val bytes = buffer.toByteArray()
         if (bytes.isEmpty()) {
+            Log.w(TAG, "receiver finished without any payload")
             mutableReceiverState.value = ReceiverState.Failed("no_data_received")
             return@withContext null
         }
@@ -155,6 +160,7 @@ class BluetoothReceiverManager(
         val dir = importDirectory.also { it.mkdirs() }
         val file = File(dir, fileName)
         file.writeBytes(bytes)
+        Log.i(TAG, "receiver completed: wrote ${bytes.size} bytes to ${file.absolutePath}")
 
         mutableReceiverState.value = ReceiverState.Completed(
             bytesReceived = bytes.size.toLong(),
@@ -163,14 +169,99 @@ class BluetoothReceiverManager(
         file
     }
 
-    fun cancel() {
+    override fun cancel() {
+        Log.i(TAG, "receiver cancelled by user")
         mutableReceiverState.value = ReceiverState.Cancelled
         closeServerSocket()
         closeAcceptedSocket()
     }
 
-    fun resetState() {
+    override fun resetState() {
         mutableReceiverState.value = ReceiverState.Idle
+    }
+
+    @SuppressLint("MissingPermission")
+    private suspend fun acceptIncomingClient(adapter: BluetoothAdapter): BluetoothSocket? {
+        val attempts = listOf(
+            ListenerMode(
+                label = "secure",
+                serviceName = SERVICE_NAME,
+                open = { adapter.listenUsingRfcommWithServiceRecord(SERVICE_NAME, SPP_UUID) },
+            ),
+            ListenerMode(
+                label = "insecure",
+                serviceName = "$SERVICE_NAME Insecure",
+                open = { adapter.listenUsingInsecureRfcommWithServiceRecord("$SERVICE_NAME Insecure", SPP_UUID) },
+            ),
+        )
+
+        attempts.forEachIndexed { index, mode ->
+            val server = try {
+                Log.i(TAG, "opening ${mode.label} RFCOMM server socket (${mode.serviceName})")
+                mode.open()
+            } catch (error: IOException) {
+                Log.w(TAG, "failed to open ${mode.label} RFCOMM server socket: ${error.message}")
+                if (index == attempts.lastIndex) {
+                    mutableReceiverState.value = ReceiverState.Failed("rfcomm_server_open_failed: ${error.message}")
+                }
+                return@forEachIndexed
+            }
+
+            serverSocket = server
+            mutableReceiverState.value = ReceiverState.Listening
+            val client = try {
+                Log.i(TAG, "waiting for ${mode.label} accept (timeout=${ACCEPT_TIMEOUT_MS}ms)")
+                runInterruptible { server.accept(ACCEPT_TIMEOUT_MS.toInt()) }
+            } catch (error: IOException) {
+                if (!currentCoroutineContext().isActive) {
+                    Log.i(TAG, "receiver accept cancelled while waiting on ${mode.label} listener")
+                    mutableReceiverState.value = ReceiverState.Cancelled
+                    return null
+                }
+                Log.w(TAG, "${mode.label} accept timed out or failed: ${error.message}")
+                if (index == attempts.lastIndex) {
+                    Log.w(TAG, "no incoming connection observed on secure/insecure listener")
+                    mutableReceiverState.value = ReceiverState.Failed("no_incoming_connection")
+                }
+                null
+            } finally {
+                closeServerSocket()
+            }
+
+            if (client != null) {
+                return client
+            }
+        }
+
+        return null
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun safeRemoteAddress(socket: BluetoothSocket): String {
+        return runCatching { socket.remoteDevice?.address ?: "unknown" }.getOrDefault("unknown")
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun describeRemoteDevice(socket: BluetoothSocket): String {
+        val remote = socket.remoteDevice
+        val address = runCatching { remote?.address ?: "unknown" }.getOrDefault("unknown")
+        val bondState = runCatching { remote?.bondState ?: BluetoothPermissionChecker.LEGACY_DISCOVERY_BOND_STATE_UNKNOWN }
+            .getOrDefault(BluetoothPermissionChecker.LEGACY_DISCOVERY_BOND_STATE_UNKNOWN)
+        return "$address (bondState=${bondStateLabel(bondState)})"
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun safeAdapterName(adapter: BluetoothAdapter): String {
+        return runCatching { adapter.name ?: "unknown" }.getOrDefault("unknown")
+    }
+
+    private fun bondStateLabel(state: Int): String {
+        return when (state) {
+            android.bluetooth.BluetoothDevice.BOND_BONDED -> "bonded"
+            android.bluetooth.BluetoothDevice.BOND_BONDING -> "bonding"
+            android.bluetooth.BluetoothDevice.BOND_NONE -> "not_bonded"
+            else -> "unknown"
+        }
     }
 
     private fun closeServerSocket() {
@@ -187,7 +278,15 @@ class BluetoothReceiverManager(
     companion object {
         private const val SERVICE_NAME = "SurvLink Receiver"
         val SPP_UUID: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
-        private const val SILENCE_TIMEOUT_MS = 3_000L
-        private const val MAX_RECEIVE_BYTES = 50 * 1024 * 1024 // 50MB
+        const val SILENCE_TIMEOUT_MS = 3_000L
+        const val MAX_RECEIVE_BYTES = 50 * 1024 * 1024 // 50MB
+        const val ACCEPT_TIMEOUT_MS = 30_000L
+        private const val TAG = "BluetoothReceiver"
     }
 }
+
+private data class ListenerMode(
+    val label: String,
+    val serviceName: String,
+    val open: () -> BluetoothServerSocket,
+)

@@ -14,7 +14,9 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -33,6 +35,7 @@ import com.unforgettable.bluetoothcollector.data.export.CsvExportWriter
 import com.unforgettable.bluetoothcollector.data.export.GeoComCsvExportWriter
 import com.unforgettable.bluetoothcollector.data.export.TxtExportWriter
 import com.unforgettable.bluetoothcollector.data.import_.ImportedArtifactStore
+import com.unforgettable.bluetoothcollector.data.import_.BluetoothClientImportManager
 import com.unforgettable.bluetoothcollector.data.protocol.DefaultProtocolHandlerFactory
 import com.unforgettable.bluetoothcollector.data.protocol.ProtocolHandlerFactory
 import com.unforgettable.bluetoothcollector.data.share.ShareLauncher
@@ -80,6 +83,7 @@ fun CollectorRoute() {
             timeProvider = dependencies.timeProvider,
             importDirectory = dependencies.importDirectory,
             importedArtifactStore = dependencies.importedArtifactStore,
+            clientImportManager = dependencies.clientImportManager,
             receiverManager = dependencies.receiverManager,
             downloadsSaver = dependencies.downloadsSaver,
             appContext = appContext,
@@ -87,6 +91,17 @@ fun CollectorRoute() {
     }
     val viewModel: CollectorViewModel = viewModel(factory = factory)
     val uiState by viewModel.uiState.collectAsState()
+    var pendingReceiverStart by remember { mutableStateOf(false) }
+
+    val discoverableLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        if (result.resultCode > 0) {
+            viewModel.onReceiverDiscoverabilityGranted(result.resultCode)
+        } else {
+            viewModel.onReceiverDiscoverabilityDenied()
+        }
+    }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions(),
@@ -94,6 +109,19 @@ fun CollectorRoute() {
         bluetoothController.refreshPermissionState()
         if (bluetoothController.permissionState.value.canConnect) {
             viewModel.onRefreshPairedDevicesRequested()
+        }
+        if (pendingReceiverStart) {
+            pendingReceiverStart = false
+            val permissionState = bluetoothController.permissionState.value
+            if (permissionState.canConnect && permissionState.canAdvertise) {
+                viewModel.onReceiverDiscoverabilityRequested()
+                val discoverableIntent = Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE).apply {
+                    putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 300)
+                }
+                discoverableLauncher.launch(discoverableIntent)
+            } else {
+                viewModel.onReceiverStartPrerequisiteFailed("missing_receiver_permission")
+            }
         }
     }
 
@@ -188,7 +216,26 @@ fun CollectorRoute() {
         onStopReceivingRequested = viewModel::onStopReceivingRequested,
         onSingleMeasureRequested = viewModel::onSingleMeasureRequested,
         onStartImportRequested = viewModel::onStartImportRequested,
-        onStartReceiverRequested = viewModel::onStartReceiverRequested,
+        onStartReceiverRequested = {
+            bluetoothController.refreshPermissionState()
+            val permissionState = bluetoothController.permissionState.value
+            when {
+                !permissionState.bluetoothEnabled -> {
+                    viewModel.onReceiverStartPrerequisiteFailed("bluetooth_disabled")
+                }
+                !permissionState.canConnect || !permissionState.canAdvertise -> {
+                    pendingReceiverStart = true
+                    permissionLauncher.launch(permissionChecker.requiredPermissionsForReceiver().toTypedArray())
+                }
+                else -> {
+                    viewModel.onReceiverDiscoverabilityRequested()
+                    val discoverableIntent = Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE).apply {
+                        putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 300)
+                    }
+                    discoverableLauncher.launch(discoverableIntent)
+                }
+            }
+        },
         onStopReceiverRequested = viewModel::onStopReceiverRequested,
         onShareImportedFile = viewModel::onShareImportedFile,
         onSaveToLocalRequested = viewModel::onSaveToLocalRequested,
@@ -207,6 +254,7 @@ private class CollectorViewModelFactory(
     private val timeProvider: CollectorTimeProvider,
     private val importDirectory: File,
     private val importedArtifactStore: ImportedArtifactStore,
+    private val clientImportManager: BluetoothClientImportManager,
     private val receiverManager: BluetoothReceiverManager,
     private val downloadsSaver: com.unforgettable.bluetoothcollector.data.share.DownloadsSaver,
     private val appContext: Context,
@@ -222,6 +270,7 @@ private class CollectorViewModelFactory(
                 timeProvider = timeProvider,
                 importDirectory = importDirectory,
                 importedArtifactStore = importedArtifactStore,
+                clientImportManager = clientImportManager,
                 receiverManager = receiverManager,
                 downloadsSaver = downloadsSaver,
                 appContext = appContext,
@@ -260,6 +309,14 @@ private class AndroidCollectorBluetoothController(
                 BluetoothDevice.ACTION_ACL_DISCONNECTED -> {
                     mutableControllerEvents.tryEmit(CollectorBluetoothControllerEvent.LinkLost)
                 }
+                BluetoothAdapter.ACTION_SCAN_MODE_CHANGED -> {
+                    val scanMode = intent.getIntExtra(BluetoothAdapter.EXTRA_SCAN_MODE, BluetoothAdapter.ERROR)
+                    mutableControllerEvents.tryEmit(
+                        CollectorBluetoothControllerEvent.DiscoverabilityChanged(
+                            isDiscoverable = scanMode == BluetoothAdapter.SCAN_MODE_CONNECTABLE_DISCOVERABLE,
+                        ),
+                    )
+                }
             }
         }
     }
@@ -290,6 +347,7 @@ private class AndroidCollectorBluetoothController(
             IntentFilter().apply {
                 addAction(BluetoothAdapter.ACTION_STATE_CHANGED)
                 addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED)
+                addAction(BluetoothAdapter.ACTION_SCAN_MODE_CHANGED)
             },
         )
         bondedDeviceManager.refreshBondedDevices()
@@ -400,6 +458,7 @@ private data class CollectorAppDependencies(
     val timeProvider: CollectorTimeProvider,
     val importDirectory: File,
     val importedArtifactStore: ImportedArtifactStore,
+    val clientImportManager: BluetoothClientImportManager,
     val receiverManager: BluetoothReceiverManager,
     val downloadsSaver: com.unforgettable.bluetoothcollector.data.share.DownloadsSaver,
 )
@@ -470,6 +529,10 @@ private object CollectorAppDependenciesHolder {
             timeProvider = timeProvider,
             importDirectory = File(context.filesDir, "imports"),
             importedArtifactStore = ImportedArtifactStore(File(context.filesDir, "imports")),
+            clientImportManager = BluetoothClientImportManager(
+                waitForFirstChunk = bluetoothController::blockingReadBytes,
+                drainAvailableBytes = bluetoothController::drainIncomingBytes,
+            ),
             receiverManager = BluetoothReceiverManager(
                 bluetoothAdapter = bluetoothAdapter,
                 permissionChecker = permissionChecker,
@@ -571,6 +634,7 @@ private fun com.unforgettable.bluetoothcollector.data.bluetooth.BluetoothPermiss
     return CollectorPermissionUiState(
         canDiscover = canDiscover,
         canConnect = canConnect,
+        canAdvertise = canAdvertise,
         bluetoothEnabled = bluetoothEnabled,
     )
 }

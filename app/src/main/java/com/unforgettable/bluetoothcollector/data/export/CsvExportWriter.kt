@@ -4,7 +4,6 @@ import com.unforgettable.bluetoothcollector.domain.model.ExportFormat
 import com.unforgettable.bluetoothcollector.domain.model.MeasurementRecord
 import com.unforgettable.bluetoothcollector.domain.model.Session
 import java.io.File
-import java.nio.charset.StandardCharsets.UTF_8
 import java.time.OffsetDateTime
 import java.time.format.DateTimeFormatter
 
@@ -23,7 +22,7 @@ class CsvExportWriter(
             sessionId = session.sessionId,
             format = ExportFormat.CSV,
             exportedAt = exportedAt,
-            content = buildCsv(records).toByteArray(UTF_8),
+            content = ExportEncoding.utf8WithBom(buildCsv(records)),
         )
     }
 

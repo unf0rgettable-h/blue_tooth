@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.dp
 import com.unforgettable.bluetoothcollector.data.bluetooth.BluetoothConnectionState
 import com.unforgettable.bluetoothcollector.data.bluetooth.ReceiverState
 import com.unforgettable.bluetoothcollector.data.import_.ImportedFileInfo
+import com.unforgettable.bluetoothcollector.data.import_.ImportExecutionMode
 import com.unforgettable.bluetoothcollector.domain.model.BondedBluetoothDeviceItem
 import com.unforgettable.bluetoothcollector.domain.model.DiscoveredBluetoothDeviceItem
 import com.unforgettable.bluetoothcollector.domain.model.ExportFormat
@@ -173,15 +174,16 @@ fun CollectorScreen(
                             onStopReceivingRequested = onStopReceivingRequested,
                             onSingleMeasureRequested = onSingleMeasureRequested,
                             onStartImportRequested = onStartImportRequested,
+                            onStartReceiverRequested = onStartReceiverRequested,
                             onClearRequested = onClearRequested,
                             onExportRequested = onExportRequested,
                             onSaveToLocalRequested = onSaveToLocalRequested,
                         )
                         ReceiverModePanel(
                             receiverState = uiState.receiverState,
-                            isCaptivateFirmware = uiState.availableModels.firstOrNull {
-                                it.modelId == uiState.selectedModelId
-                            }?.firmwareFamily == "Captivate",
+                            isReceiverDiscoverable = uiState.isReceiverDiscoverable,
+                            receiverDiagnostics = uiState.receiverDiagnostics,
+                            showReceiverMode = uiState.usesReceiverImportMode(),
                             onStartReceiver = onStartReceiverRequested,
                             onStopReceiver = onStopReceiverRequested,
                         )
@@ -482,6 +484,7 @@ private fun DataActionPanel(
     onStopReceivingRequested: () -> Unit,
     onSingleMeasureRequested: () -> Unit,
     onStartImportRequested: () -> Unit,
+    onStartReceiverRequested: () -> Unit,
     onClearRequested: () -> Unit,
     onExportRequested: () -> Unit,
     onSaveToLocalRequested: () -> Unit,
@@ -535,8 +538,14 @@ private fun DataActionPanel(
                 }
             }
             FilledTonalButton(
-                onClick = onStartImportRequested,
-                enabled = uiState.connectionState == BluetoothConnectionState.CONNECTED && !uiState.isReceiving,
+                onClick = {
+                    when (importProfile.executionMode) {
+                        ImportExecutionMode.CLIENT_STREAM -> onStartImportRequested()
+                        ImportExecutionMode.RECEIVER_STREAM -> onStartReceiverRequested()
+                        ImportExecutionMode.GUIDANCE_ONLY -> onStartImportRequested()
+                    }
+                },
+                enabled = uiState.canStartPrimaryImportAction(),
             ) {
                 Text(text = importProfile.actionLabel)
             }
@@ -580,11 +589,13 @@ private fun DataActionPanel(
 @Composable
 private fun ReceiverModePanel(
     receiverState: ReceiverState,
-    isCaptivateFirmware: Boolean,
+    isReceiverDiscoverable: Boolean,
+    receiverDiagnostics: List<String>,
+    showReceiverMode: Boolean,
     onStartReceiver: () -> Unit,
     onStopReceiver: () -> Unit,
 ) {
-    if (!isCaptivateFirmware && receiverState is ReceiverState.Idle) return
+    if (!showReceiverMode && receiverState is ReceiverState.Idle) return
 
     PanelCard(
         title = "实验性接收模式",
@@ -601,6 +612,16 @@ private fun ReceiverModePanel(
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
                 )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "可发现性：${if (isReceiverDiscoverable) "已开启" else "未开启"}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (isReceiverDiscoverable) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
                 if (receiverState is ReceiverState.Receiving) {
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
@@ -616,6 +637,22 @@ private fun ReceiverModePanel(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                     )
+                }
+                if (receiverDiagnostics.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "诊断日志：",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    receiverDiagnostics.takeLast(5).forEach { line ->
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "• $line",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
         }
@@ -1010,6 +1047,7 @@ private fun buildPermissionSummary(uiState: CollectorUiState): String {
         if (!uiState.permissionState.bluetoothEnabled) add("蓝牙未开启")
         if (!uiState.permissionState.canDiscover) add("缺少搜索权限")
         if (!uiState.permissionState.canConnect) add("缺少连接权限")
+        if (!uiState.permissionState.canAdvertise) add("缺少广播/可发现权限")
     }
     return parts.joinToString(separator = " / ")
 }

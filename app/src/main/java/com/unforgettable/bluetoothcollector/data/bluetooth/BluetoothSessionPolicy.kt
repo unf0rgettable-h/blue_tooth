@@ -9,6 +9,7 @@ enum class BluetoothConnectionState {
 data class BluetoothPermissionState(
     val canDiscover: Boolean,
     val canConnect: Boolean,
+    val canAdvertise: Boolean = true,
     val bluetoothEnabled: Boolean,
     val bluetoothStateTrusted: Boolean = true,
 )

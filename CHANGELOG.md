@@ -5,6 +5,56 @@ All notable changes to SurvLink will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-04-14
+
+### Added
+
+#### TS09 / TS60 Export Path Decoupling
+- TS09 and TS60 now follow distinct data-to-phone paths instead of sharing one import assumption.
+- Data-page primary action now routes by model profile:
+  - **TS09 / FlexLine** → client-connected file import
+  - **TS60 / Captivate** → experimental Bluetooth export receiver mode
+
+#### TS09 Client Import Completion Manager
+- Added `BluetoothClientImportManager` to own TS09 client-side file import completion.
+- Import completion now uses **first packet + drained bytes + silence timeout** instead of waiting for a later export to unblock the import flow.
+- This targets the field bug where the phone only received the first exported file after a second export was triggered on the instrument.
+
+#### TS60 Receiver Compatibility Diagnostics
+- TS60 receiver mode now surfaces discoverability, pairing, SPP UUID, and secure/insecure RFCOMM diagnostics directly in the app state/log flow.
+- Receiver diagnostics now call out:
+  - current discoverable window
+  - standard SPP UUID usage
+  - secure/insecure listener fallback
+  - prior pairing expectation when encrypted RFCOMM is required
+
+#### Export Encoding Compatibility Guard
+- CSV, GeoCOM CSV, and TXT exports now prepend a **UTF-8 BOM**.
+- This reduces Chinese garbling in common spreadsheet/text viewers that mis-detect plain UTF-8 files as ANSI/GBK.
+
+### Changed
+- Version bump to v1.5.0 (versionCode 10)
+- `ImportProfileVerdict` now includes `EXPERIMENTAL`
+- TS60 import profile now uses:
+  - `executionMode = RECEIVER_STREAM`
+  - `transportMode = RECEIVER`
+  - receiver-oriented action text for export-to-phone workflows
+- Receiver-mode UI visibility and primary-action enablement are now driven by profile execution mode instead of generic connected-state assumptions
+
+### Fixed
+- Fixed TS09 file import completion so a single export can finish without needing a second export to trigger delivery.
+- Fixed receiver start gating so non-TS60 profiles cannot accidentally enter TS60 export receiver mode.
+- Fixed export compatibility for Chinese content in external viewers by adding BOM-based UTF-8 signaling.
+
+### Testing
+- Added `BluetoothClientImportManagerTest`
+- Added `CollectorUiStateTest`
+- Expanded export writer tests to verify UTF-8 BOM behavior for CSV/TXT/GeoCOM CSV
+- Expanded ViewModel tests for TS60 receiver diagnostics and non-TS60 receiver rejection
+- Verified:
+  - `:app:testDebugUnitTest`
+  - `:app:lintDebug`
+
 ## [1.4.1] - 2026-04-11
 
 ### Critical Fixes

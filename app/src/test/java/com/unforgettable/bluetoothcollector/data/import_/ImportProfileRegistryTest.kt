@@ -27,11 +27,11 @@ class ImportProfileRegistryTest {
             modelId = "TS60",
         )
 
-        assertEquals(ImportProfileVerdict.GUIDANCE_ONLY, profile.verdict)
+        assertEquals(ImportProfileVerdict.EXPERIMENTAL, profile.verdict)
         assertEquals("接收实时GSI数据", profile.liveReceiveLabel)
-        assertEquals("查看导出说明", profile.actionLabel)
-        assertEquals("Captivate 独立路径", profile.protocolSummary)
-        assertEquals(ImportExecutionMode.GUIDANCE_ONLY, profile.executionMode)
+        assertEquals("启动导出接收", profile.actionLabel)
+        assertEquals("Captivate 蓝牙导出到手机", profile.protocolSummary)
+        assertEquals(ImportExecutionMode.RECEIVER_STREAM, profile.executionMode)
         assertEquals(TransportConnectionMode.RECEIVER, profile.transportMode)
     }
 

@@ -19,6 +19,7 @@ class BluetoothPermissionChecker(
         return BluetoothPermissionState(
             canDiscover = hasDiscoveryPermission(),
             canConnect = hasConnectPermission(),
+            canAdvertise = hasAdvertisePermission(),
             bluetoothEnabled = bluetoothEnabled,
             bluetoothStateTrusted = bluetoothStateTrusted,
         )
@@ -42,6 +43,15 @@ class BluetoothPermissionChecker(
         }
     }
 
+    fun requiredPermissionsForReceiver(): List<String> {
+        return buildList {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                add(Manifest.permission.BLUETOOTH_CONNECT)
+                add(Manifest.permission.BLUETOOTH_ADVERTISE)
+            }
+        }.distinct()
+    }
+
     private fun hasDiscoveryPermission(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             isGranted(Manifest.permission.BLUETOOTH_SCAN)
@@ -53,6 +63,14 @@ class BluetoothPermissionChecker(
     private fun hasConnectPermission(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             isGranted(Manifest.permission.BLUETOOTH_CONNECT)
+        } else {
+            true
+        }
+    }
+
+    private fun hasAdvertisePermission(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            isGranted(Manifest.permission.BLUETOOTH_ADVERTISE)
         } else {
             true
         }

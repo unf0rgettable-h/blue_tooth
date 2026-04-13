@@ -131,16 +131,14 @@ class BluetoothConnectionManager(
 
     suspend fun drainIncomingBytes(maxBytes: Int = 1024): ByteArray = withContext(Dispatchers.IO) {
         val stream = inputStream ?: return@withContext ByteArray(0)
-        runCatching {
-            val available = stream.available().coerceAtMost(maxBytes)
-            if (available <= 0) {
-                ByteArray(0)
-            } else {
-                val buffer = ByteArray(available)
-                val read = stream.read(buffer)
-                if (read <= 0) ByteArray(0) else buffer.copyOf(read)
-            }
-        }.getOrDefault(ByteArray(0))
+        val available = stream.available().coerceAtMost(maxBytes)
+        if (available <= 0) {
+            ByteArray(0)
+        } else {
+            val buffer = ByteArray(available)
+            val read = stream.read(buffer)
+            if (read <= 0) ByteArray(0) else buffer.copyOf(read)
+        }
     }
 
     @Throws(IOException::class)

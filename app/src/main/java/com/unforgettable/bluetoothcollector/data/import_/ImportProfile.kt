@@ -4,6 +4,7 @@ import com.unforgettable.bluetoothcollector.data.bluetooth.TransportConnectionMo
 
 enum class ImportProfileVerdict {
     SUPPORTED,
+    EXPERIMENTAL,
     GUIDANCE_ONLY,
     UNSUPPORTED,
 }

@@ -3,10 +3,13 @@ package com.unforgettable.bluetoothcollector.ui.collector
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.unforgettable.bluetoothcollector.data.bluetooth.BluetoothConnectionState
-import com.unforgettable.bluetoothcollector.data.bluetooth.BluetoothReceiverManager
+import com.unforgettable.bluetoothcollector.data.bluetooth.BluetoothReceiverController
 import com.unforgettable.bluetoothcollector.data.bluetooth.ReceiverState
 import com.unforgettable.bluetoothcollector.data.instrument.InstrumentCatalog
+import com.unforgettable.bluetoothcollector.data.import_.BluetoothClientImportController
+import com.unforgettable.bluetoothcollector.data.import_.BluetoothClientImportResult
 import com.unforgettable.bluetoothcollector.data.import_.ImportedArtifactStoreContract
+import com.unforgettable.bluetoothcollector.data.import_.ImportExecutionMode
 import com.unforgettable.bluetoothcollector.data.import_.ImportProfileVerdict
 import com.unforgettable.bluetoothcollector.data.protocol.ProtocolHandler
 import com.unforgettable.bluetoothcollector.data.protocol.ProtocolHandlerFactory
@@ -44,6 +47,9 @@ data class RestoredCollectorSession(
 sealed interface CollectorBluetoothControllerEvent {
     data object AdapterPoweredOff : CollectorBluetoothControllerEvent
     data object LinkLost : CollectorBluetoothControllerEvent
+    data class DiscoverabilityChanged(
+        val isDiscoverable: Boolean,
+    ) : CollectorBluetoothControllerEvent
 }
 
 sealed interface CollectorUiEvent {
@@ -134,7 +140,8 @@ class CollectorViewModel(
     private val timeProvider: CollectorTimeProvider,
     private val importDirectory: java.io.File,
     private val importedArtifactStore: ImportedArtifactStoreContract? = null,
-    private val receiverManager: BluetoothReceiverManager? = null,
+    private val clientImportManager: BluetoothClientImportController? = null,
+    private val receiverManager: BluetoothReceiverController? = null,
     private val downloadsSaver: com.unforgettable.bluetoothcollector.data.share.DownloadsSaver? = null,
     private val appContext: android.content.Context? = null,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
@@ -190,21 +197,48 @@ class CollectorViewModel(
                 when (event) {
                     CollectorBluetoothControllerEvent.AdapterPoweredOff -> {
                         stopReceivingInternal(resumeIdleDrain = false)
+                        appendReceiverDiagnostic("蓝牙已关闭，已退出接收模式")
                         mutableUiState.update {
                             it.copy(
                                 connectionState = BluetoothConnectionState.DISCONNECTED,
                                 statusMessage = "bluetooth_disabled",
+                                isReceiverDiscoverable = false,
                             )
                         }
                     }
                     CollectorBluetoothControllerEvent.LinkLost -> {
+                        if (uiState.value.usesReceiverImportMode() &&
+                            (receiverJob?.isActive == true || uiState.value.receiverState != ReceiverState.Idle)
+                        ) {
+                            appendReceiverDiagnostic("已忽略接收模式下的链路断开广播")
+                            return@collectLatest
+                        }
                         importedArtifactStore?.preserveLastSuccessfulOnFailure()
                         stopReceivingInternal(resumeIdleDrain = false)
+                        appendReceiverDiagnostic("蓝牙链路断开")
                         mutableUiState.update {
                             it.copy(
                                 connectionState = BluetoothConnectionState.DISCONNECTED,
                                 statusMessage = "bluetooth_link_lost",
                             )
+                        }
+                    }
+                    is CollectorBluetoothControllerEvent.DiscoverabilityChanged -> {
+                        if (event.isDiscoverable) {
+                            appendReceiverDiagnostic("系统蓝牙已进入可发现状态")
+                            mutableUiState.update {
+                                it.copy(
+                                    isReceiverDiscoverable = true,
+                                )
+                            }
+                        } else {
+                            appendReceiverDiagnostic("系统蓝牙已退出可发现状态")
+                            mutableUiState.update {
+                                it.copy(
+                                    isReceiverDiscoverable = false,
+                                    statusMessage = "receiver_discoverable_expired",
+                                )
+                            }
                         }
                     }
                 }
@@ -213,7 +247,17 @@ class CollectorViewModel(
         receiverManager?.let { manager ->
             scope.launch {
                 manager.receiverState.collectLatest { state ->
-                    mutableUiState.update { it.copy(receiverState = state) }
+                    mutableUiState.update { current ->
+                        val nextState = if (
+                            current.receiverState is ReceiverState.RequestingDiscoverability &&
+                            state is ReceiverState.Idle
+                        ) {
+                            current.receiverState
+                        } else {
+                            state
+                        }
+                        current.copy(receiverState = nextState)
+                    }
                 }
             }
         }
@@ -496,10 +540,24 @@ class CollectorViewModel(
                 return@launch
             }
             val importProfile = uiState.value.currentImportProfile()
+            when (importProfile.executionMode) {
+                ImportExecutionMode.RECEIVER_STREAM -> {
+                    mutableUiState.update { it.copy(statusMessage = "receiver_mode_required_for_selected_model") }
+                    return@launch
+                }
+
+                ImportExecutionMode.GUIDANCE_ONLY -> {
+                    mutableUiState.update { it.copy(statusMessage = importProfile.guidanceMessage) }
+                    return@launch
+                }
+
+                ImportExecutionMode.CLIENT_STREAM -> Unit
+            }
             if (importProfile.verdict != ImportProfileVerdict.SUPPORTED) {
                 mutableUiState.update { it.copy(statusMessage = importProfile.guidanceMessage) }
                 return@launch
             }
+            val importManager = clientImportManager ?: return@launch
 
             mutableUiState.update {
                 it.copy(
@@ -513,7 +571,7 @@ class CollectorViewModel(
                 return@launch
             }
             receiveJob = scope.launch(receiveDispatcher) {
-                rawFileReceiveLoop()
+                runClientImportLoop(importManager)
             }
         }
     }
@@ -691,97 +749,150 @@ class CollectorViewModel(
         }
     }
 
-    private suspend fun rawFileReceiveLoop() {
-        val buffer = java.io.ByteArrayOutputStream()
-        val maxSize = RAW_FILE_MAX_BYTES
-        while (mutableUiState.value.isReceiving &&
-            mutableUiState.value.connectionState == BluetoothConnectionState.CONNECTED
-        ) {
-            val incoming = try {
-                if (buffer.size() > 0) {
-                    bluetoothController.blockingReadBytesWithTimeout(IMPORT_SILENCE_TIMEOUT_MS)
-                        ?: break // silence → transmission complete
-                } else {
-                    bluetoothController.blockingReadBytes() // wait for first byte
-                }
-            } catch (e: java.io.IOException) {
+    private suspend fun runClientImportLoop(
+        importManager: BluetoothClientImportController,
+    ) {
+        val modelCharset = java.nio.charset.Charset.forName(
+            currentInstrumentModel()?.dataCharsetName ?: "GBK",
+        )
+        val result = try {
+            importManager.receiveImportedFile(
+                importDirectory = importDirectory,
+                modelCharset = modelCharset,
+                timeProvider = timeProvider::now,
+                silenceTimeoutMs = IMPORT_SILENCE_TIMEOUT_MS,
+                maxBytes = RAW_FILE_MAX_BYTES,
+            )
+        } catch (e: java.io.IOException) {
+            importedArtifactStore?.preserveLastSuccessfulOnFailure()
+            cancelIdleDrain()
+            mutableUiState.update {
+                it.copy(
+                    isReceiving = false,
+                    isImporting = false,
+                    connectionState = BluetoothConnectionState.DISCONNECTED,
+                    statusMessage = "bluetooth_link_lost",
+                )
+            }
+            return
+        }
+
+        when (result) {
+            BluetoothClientImportResult.NoData -> {
                 importedArtifactStore?.preserveLastSuccessfulOnFailure()
-                cancelIdleDrain()
+                mutableUiState.update {
+                    it.copy(isReceiving = false, isImporting = false, statusMessage = "import_no_data_received")
+                }
+                ensureIdleDrainLoop()
+            }
+
+            BluetoothClientImportResult.TooLarge -> {
+                importedArtifactStore?.preserveLastSuccessfulOnFailure()
+                mutableUiState.update {
+                    it.copy(isReceiving = false, isImporting = false, statusMessage = "import_file_too_large")
+                }
+                ensureIdleDrainLoop()
+            }
+
+            is BluetoothClientImportResult.Success -> {
+                importedArtifactStore?.save(result.info)
                 mutableUiState.update {
                     it.copy(
                         isReceiving = false,
                         isImporting = false,
-                        connectionState = BluetoothConnectionState.DISCONNECTED,
-                        statusMessage = "bluetooth_link_lost",
+                        importedFileInfo = result.info,
+                        statusMessage = "已导入文件：${result.info.format.displayName}（${formatFileSize(result.info.sizeBytes)}）",
                     )
                 }
-                return
-            }
-            if (incoming.isNotEmpty()) {
-                buffer.write(incoming)
-                if (buffer.size() > maxSize) {
-                    importedArtifactStore?.preserveLastSuccessfulOnFailure()
-                    mutableUiState.update {
-                        it.copy(statusMessage = "import_file_too_large")
-                    }
-                    break
-                }
+                ensureIdleDrainLoop()
             }
         }
-        val bytes = buffer.toByteArray()
-        if (bytes.isEmpty()) {
-            importedArtifactStore?.preserveLastSuccessfulOnFailure()
-            mutableUiState.update {
-                it.copy(isReceiving = false, isImporting = false, statusMessage = "import_no_data_received")
-            }
-            ensureIdleDrainLoop()
-            return
-        }
-        val header = bytes.copyOf(minOf(bytes.size, 512))
-        val modelCharset = java.nio.charset.Charset.forName(
-            currentInstrumentModel()?.dataCharsetName ?: "GBK",
-        )
-        val format = com.unforgettable.bluetoothcollector.data.import_.ImportedFileFormat.detect(header, modelCharset)
-        val receivedAt = timeProvider.now()
-        val fileName = "import-${receivedAt.replace(Regex("[^0-9T]"), "")}.${format.extension}"
-        val dir = importDirectory.also { it.mkdirs() }
-        val file = java.io.File(dir, fileName)
-        file.writeBytes(bytes)
-        val info = com.unforgettable.bluetoothcollector.data.import_.ImportedFileInfo(
-            file = file,
-            sizeBytes = bytes.size.toLong(),
-            format = format,
-            receivedAt = receivedAt,
-        )
-        importedArtifactStore?.save(info)
-        mutableUiState.update {
-            it.copy(
-                isReceiving = false,
-                isImporting = false,
-                importedFileInfo = info,
-                statusMessage = "已导入文件：${format.displayName}（${formatFileSize(bytes.size.toLong())}）",
-            )
-        }
-        ensureIdleDrainLoop()
     }
 
     // --- Experimental TS60 RFCOMM Receiver Mode ---
 
+    fun onReceiverStartPrerequisiteFailed(reason: String) {
+        appendReceiverDiagnostic("监听前置条件失败：$reason")
+        mutableUiState.update {
+            it.copy(
+                statusMessage = reason,
+                receiverState = ReceiverState.Idle,
+            )
+        }
+    }
+
+    fun onReceiverDiscoverabilityRequested() {
+        appendReceiverDiagnostic("已请求系统开启蓝牙可发现模式")
+        mutableUiState.update {
+            it.copy(
+                receiverState = ReceiverState.RequestingDiscoverability,
+                statusMessage = "receiver_discoverable_requested",
+            )
+        }
+    }
+
+    fun onReceiverDiscoverabilityDenied() {
+        appendReceiverDiagnostic("用户拒绝或系统未授予蓝牙可发现模式")
+        mutableUiState.update {
+            it.copy(
+                receiverState = ReceiverState.Idle,
+                isReceiverDiscoverable = false,
+                statusMessage = "receiver_discoverable_denied",
+            )
+        }
+    }
+
+    fun onReceiverDiscoverabilityGranted(durationSeconds: Int) {
+        appendReceiverDiagnostic("蓝牙可发现模式已启用：${durationSeconds}s")
+        appendReceiverDiagnostic("请在 ${durationSeconds}s 内让 TS60 搜索当前手机")
+        appendReceiverDiagnostic("使用标准 SPP UUID：${com.unforgettable.bluetoothcollector.data.bluetooth.BluetoothReceiverManager.SPP_UUID}")
+        appendReceiverDiagnostic("若 secure 配对失败，将继续尝试 secure / insecure RFCOMM 监听")
+        appendReceiverDiagnostic("如 TS60 需要加密串口连接，请先在系统蓝牙完成配对")
+        mutableUiState.update {
+            it.copy(
+                isReceiverDiscoverable = true,
+                statusMessage = "receiver_discoverable_enabled_${durationSeconds}s",
+            )
+        }
+        onStartReceiverRequested()
+    }
+
     fun onStartReceiverRequested() {
         val manager = receiverManager ?: return
+        if (uiState.value.currentImportProfile().executionMode != ImportExecutionMode.RECEIVER_STREAM) {
+            appendReceiverDiagnostic("当前型号未启用导出接收模式")
+            mutableUiState.update { it.copy(statusMessage = "receiver_mode_not_supported_for_selected_model") }
+            return
+        }
         if (uiState.value.isReceiving || uiState.value.isImporting) {
+            appendReceiverDiagnostic("监听启动失败：当前仍有接收/导入任务")
             mutableUiState.update { it.copy(statusMessage = "receiver_conflicts_with_active_operation") }
             return
         }
         if (receiverJob?.isActive == true) return
 
-        manager.resetState()
         receiverJob = scope.launch {
+            if (uiState.value.connectionState != BluetoothConnectionState.DISCONNECTED) {
+                appendReceiverDiagnostic("启动监听前断开旧的 client 连接")
+                stopReceivingInternal(resumeIdleDrain = false)
+                bluetoothController.disconnect()
+                mutableUiState.update {
+                    it.copy(
+                        connectionState = BluetoothConnectionState.DISCONNECTED,
+                        isReceiving = false,
+                        isImporting = false,
+                    )
+                }
+            }
+            manager.resetState()
+            appendReceiverDiagnostic("按 Bluetooth Classic 串口模式等待 TS60 主动连入")
+            appendReceiverDiagnostic("开始监听 RFCOMM 传入连接")
             val file = manager.listenAndReceive(
                 importDirectory = importDirectory,
                 timeProvider = timeProvider::now,
             )
             if (file != null) {
+                appendReceiverDiagnostic("已接收导出文件：${file.name}")
                 val header = file.readBytes().copyOf(minOf(file.length().toInt(), 512))
                 val format = com.unforgettable.bluetoothcollector.data.import_.ImportedFileFormat.detect(header)
                 val info = com.unforgettable.bluetoothcollector.data.import_.ImportedFileInfo(
@@ -797,11 +908,14 @@ class CollectorViewModel(
                         statusMessage = "实验性接收完成：${format.displayName}（${formatFileSize(file.length())}）",
                     )
                 }
+            } else {
+                appendReceiverDiagnostic("未收到任何传入连接或文件")
             }
         }
     }
 
     fun onStopReceiverRequested() {
+        appendReceiverDiagnostic("已请求停止监听")
         receiverManager?.cancel()
         receiverJob?.cancel()
         receiverJob = null
@@ -838,6 +952,13 @@ class CollectorViewModel(
         }
     }
 
+    private fun appendReceiverDiagnostic(message: String) {
+        mutableUiState.update { current ->
+            val next = (current.receiverDiagnostics + message).takeLast(MAX_RECEIVER_DIAGNOSTICS)
+            current.copy(receiverDiagnostics = next)
+        }
+    }
+
     private fun ensureIdleDrainLoop() {
         if (idleDrainJob?.isActive == true) return
         if (mutableUiState.value.connectionState != BluetoothConnectionState.CONNECTED || mutableUiState.value.isReceiving) {
@@ -847,7 +968,17 @@ class CollectorViewModel(
             while (!mutableUiState.value.isReceiving &&
                 mutableUiState.value.connectionState == BluetoothConnectionState.CONNECTED
             ) {
-                bluetoothController.drainIncomingBytes()
+                try {
+                    bluetoothController.drainIncomingBytes()
+                } catch (_: java.io.IOException) {
+                    mutableUiState.update {
+                        it.copy(
+                            connectionState = BluetoothConnectionState.DISCONNECTED,
+                            statusMessage = "bluetooth_link_lost",
+                        )
+                    }
+                    break
+                }
                 delay(RECEIVE_IDLE_DELAY_MS)
             }
         }
@@ -899,7 +1030,8 @@ class CollectorViewModel(
 
     companion object {
         private const val RECEIVE_IDLE_DELAY_MS = 250L
-        private const val IMPORT_SILENCE_TIMEOUT_MS = 3_000L
-        private const val RAW_FILE_MAX_BYTES = 50 * 1024 * 1024 // 50MB
+        private const val IMPORT_SILENCE_TIMEOUT_MS = BluetoothClientImportController.SILENCE_TIMEOUT_MS
+        private const val RAW_FILE_MAX_BYTES = BluetoothClientImportController.MAX_RECEIVE_BYTES
+        private const val MAX_RECEIVER_DIAGNOSTICS = 24
     }
 }

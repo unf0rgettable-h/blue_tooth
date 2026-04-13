@@ -5,6 +5,7 @@ import com.unforgettable.bluetoothcollector.domain.model.MeasurementRecord
 import com.unforgettable.bluetoothcollector.domain.model.Session
 import java.io.File
 import java.io.IOException
+import java.nio.charset.StandardCharsets
 import java.nio.charset.StandardCharsets.UTF_8
 import java.nio.file.Files
 import java.time.OffsetDateTime
@@ -16,6 +17,23 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CsvExportWriterTest {
+
+    @Test
+    fun prepends_utf8_bom_to_reduce_chinese_garbled_text_in_common_csv_viewers() {
+        val writer = CsvExportWriter()
+        val directory = Files.createTempDirectory("csv-export-bom").toFile()
+        val exportedFile = writer.write(
+            directory = directory,
+            session = sampleSession(),
+            records = listOf(sampleRecord(id = "row-1", sequence = 1, rawPayload = "中文点位")),
+            exportedAt = OffsetDateTime.parse("2026-03-31T10:05:00+08:00"),
+        )
+
+        val bytes = exportedFile.readBytes()
+
+        assertArrayEquals(byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte()), bytes.copyOfRange(0, 3))
+        assertTrue(String(bytes, StandardCharsets.UTF_8).contains("中文点位"))
+    }
 
     @Test
     fun writes_utf8_csv_with_required_columns_quoting_and_crlf() {
@@ -48,8 +66,9 @@ class CsvExportWriterTest {
                 "row-1,1,2026-03-31T10:00:01+08:00,徕卡,TS02,\"Leica, \"\"TS02\"\"\",00:11:22:33:44:55," +
                 "\"RAW, \"\"payload\"\"\",01,123.456\r\n"
             ).toByteArray(UTF_8)
+        val expectedWithBom = byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte()) + expected
 
-        assertArrayEquals(expected, exportedFile.readBytes())
+        assertArrayEquals(expectedWithBom, exportedFile.readBytes())
     }
 
     @Test

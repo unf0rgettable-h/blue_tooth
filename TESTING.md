@@ -1,8 +1,8 @@
-# Hardware Testing Guide - v1.4.1
+# Hardware Testing Guide - v1.5.0
 
 ## Overview
 
-This document provides a comprehensive testing checklist for v1.4.1, which includes bug fixes for Chinese character encoding and UI state management discovered during field testing.
+This document provides a comprehensive testing checklist for v1.5.0, which includes TS09/TS60 export-path split work, TS09 import completion fixes, and TS60 experimental receiver-mode hardening.
 
 ## Test Environment
 
@@ -20,10 +20,10 @@ This document provides a comprehensive testing checklist for v1.4.1, which inclu
 ### 1. Install APK
 ```bash
 # Download from GitHub release
-wget https://github.com/unf0rgettable-h/blue_tooth/releases/download/v1.4.1/survlink.apk
+wget https://github.com/unf0rgettable-h/blue_tooth/releases/download/v1.5.0/survlink-v1.5.0-signed.apk
 
 # Install via adb
-adb install survlink.apk
+adb install survlink-v1.5.0-signed.apk
 
 # Or manually install on device
 ```
@@ -31,7 +31,7 @@ adb install survlink.apk
 ### 2. Verify Installation
 - [ ] App icon appears in launcher
 - [ ] App opens without crash
-- [ ] Version shows "1.4.1" in app info
+- [ ] Version shows "1.5.0" in app info
 
 ### 3. Grant Permissions
 - [ ] Bluetooth permission granted

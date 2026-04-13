@@ -3,6 +3,7 @@ package com.unforgettable.bluetoothcollector.data.export
 import com.unforgettable.bluetoothcollector.domain.model.DelimiterStrategy
 import com.unforgettable.bluetoothcollector.domain.model.MeasurementRecord
 import com.unforgettable.bluetoothcollector.domain.model.Session
+import java.nio.charset.StandardCharsets
 import java.nio.charset.StandardCharsets.UTF_8
 import java.nio.file.Files
 import java.time.OffsetDateTime
@@ -11,6 +12,42 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GeoComCsvExportWriterTest {
+
+    @Test
+    fun prepends_utf8_bom_to_geocom_csv_exports_for_chinese_compatibility() {
+        val writer = GeoComCsvExportWriter()
+        val directory = Files.createTempDirectory("geocom-csv-export-bom").toFile()
+        val exported = writer.write(
+            directory = directory,
+            session = sampleSession(),
+            records = listOf(
+                MeasurementRecord(
+                    id = "row-1",
+                    sequence = 1,
+                    receivedAt = "2026-03-31T10:00:01+08:00",
+                    instrumentBrand = "徕卡",
+                    instrumentModel = "TS60",
+                    bluetoothDeviceName = "徕卡 TS60",
+                    bluetoothDeviceAddress = "00:11:22:33:44:55",
+                    rawPayload = "中文 GeoCOM 记录",
+                    parsedCode = "GEOCOM",
+                    parsedValue = "值",
+                    protocolType = "GEOCOM",
+                    hzAngleRad = 1.0,
+                    vAngleRad = 2.0,
+                    slopeDistanceM = 3.0,
+                ),
+            ),
+            exportedAt = OffsetDateTime.parse("2026-03-31T10:05:00+08:00"),
+        )
+
+        val bytes = exported.readBytes()
+
+        assertEquals(0xEF.toByte(), bytes[0])
+        assertEquals(0xBB.toByte(), bytes[1])
+        assertEquals(0xBF.toByte(), bytes[2])
+        assertTrue(String(bytes, StandardCharsets.UTF_8).contains("中文 GeoCOM 记录"))
+    }
 
     @Test
     fun writes_geocom_angles_in_rad_deg_and_gon_columns() {
@@ -40,7 +77,7 @@ class GeoComCsvExportWriterTest {
             exportedAt = OffsetDateTime.parse("2026-03-31T10:05:00+08:00"),
         )
 
-        val lines = exported.readText(UTF_8).trim().lines()
+        val lines = exported.readText(UTF_8).removePrefix("\uFEFF").trim().lines()
 
         assertEquals(
             "id,sequence,received_at,instrument_brand,instrument_model,bluetooth_device_name," +

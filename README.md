@@ -42,7 +42,7 @@
 ### 下载安装
 
 1. 前往 [Releases 页面](https://github.com/unf0rgettable-h/blue_tooth/releases/latest)
-2. 下载 `survlink.apk`
+2. 下载 `survlink-v1.5.0-signed.apk`
 3. 在 Android 设备上启用"允许安装未知应用"
 4. 安装 APK
 
@@ -261,7 +261,7 @@ Made with ❤️ for surveyors worldwide
 ### Download & Install
 
 1. Go to [Releases page](https://github.com/unf0rgettable-h/blue_tooth/releases/latest)
-2. Download `survlink.apk`
+2. Download `survlink-v1.5.0-signed.apk`
 3. Enable "Install from unknown sources" on your Android device
 4. Install the APK
 

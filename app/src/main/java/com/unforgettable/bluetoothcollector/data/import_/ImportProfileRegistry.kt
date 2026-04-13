@@ -13,12 +13,12 @@ object ImportProfileRegistry {
             brandId == "leica" && modelId == "TS60" -> ImportProfile(
                 brandId = brandId,
                 modelId = modelId,
-                verdict = ImportProfileVerdict.GUIDANCE_ONLY,
+                verdict = ImportProfileVerdict.EXPERIMENTAL,
                 liveReceiveLabel = "接收实时GSI数据",
-                actionLabel = "查看导出说明",
-                guidanceMessage = "TS60 / Captivate：实时测量走 GeoCOM。ASCII 导出与 GSI output 需按独立连接路径配置，本版本不再默认复用 TS09 的批量导入流程。",
-                protocolSummary = "Captivate 独立路径",
-                executionMode = ImportExecutionMode.GUIDANCE_ONLY,
+                actionLabel = "启动导出接收",
+                guidanceMessage = "TS60 / Captivate：手机进入可搜索/可连接接收模式，等待仪器通过蓝牙导出 ASCII 数据。该路径仍需实机验证。",
+                protocolSummary = "Captivate 蓝牙导出到手机",
+                executionMode = ImportExecutionMode.RECEIVER_STREAM,
                 transportMode = TransportConnectionMode.RECEIVER,
             )
 

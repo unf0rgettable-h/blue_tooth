@@ -29,5 +29,5 @@
 - 已通过：`:app:compileDebugKotlin`
 - 已通过：`:app:compileDebugAndroidTestKotlin`
 - 已通过：`:app:assembleRelease`
-- 待补：`:app:connectedDebugAndroidTest` 当前卡在 ADB 安装阶段，0 个测试执行，错误为 `ShellCommandUnresponsiveException`
-- 待补：真机安装验证；当前 `adb devices` 为空，需要手机重新连接后执行
+- 已通过：`:app:connectedDebugAndroidTest`，PJZ110 真机执行 6 个测试
+- 已通过：PJZ110 真机安装验证，`versionName=1.6.0`，`versionCode=11`

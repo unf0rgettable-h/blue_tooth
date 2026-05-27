@@ -5,7 +5,7 @@
 - [x] Spec 风险与决策确认
 - [x] HARD-GATE 用户确认后开始实现
 - [x] 实现 TS60 WLAN/FTP 项目文件接收链路
-- [ ] 执行单元测试、编译和真机验证
+- [x] 执行单元测试、编译和真机验证
 
 ## Implementation Plan
 
@@ -122,17 +122,18 @@
 - [x] `./gradlew :app:testDebugUnitTest`
 - [x] `./gradlew :app:compileDebugKotlin`
 - [x] `./gradlew :app:compileDebugAndroidTestKotlin`
-- [ ] `./gradlew :app:connectedDebugAndroidTest`
+- [x] `./gradlew :app:connectedDebugAndroidTest`
 - [x] `./gradlew :app:assembleDebug`
-- [ ] `adb install -r app/build/outputs/apk/debug/app-debug.apk`
-- [ ] `adb shell dumpsys package com.unforgettable.bluetoothcollector | rg "versionName|versionCode|lastUpdateTime"`
-- [ ] `git status --short`
-- [ ] `git add ... && git commit -m "Add TS60 WLAN project transfer"`
-- [ ] `git push origin refactor/ui-ts60-agent-maintainability`
+- [x] `adb install -r app/build/outputs/apk/release/app-release.apk`
+- [x] `adb shell dumpsys package com.unforgettable.bluetoothcollector | rg "versionName|versionCode|lastUpdateTime"`
+- [x] `git status --short`
+- [x] `git add ... && git commit -m "Add TS60 WLAN project transfer"`
+- [x] `git push origin refactor/ui-ts60-agent-maintainability`
 
 ## Review
 
 - 已完成 TS60 WLAN/FTP 项目文件接收实现、README/CHANGELOG/Release notes 草稿、1.6.0 版本号更新。
 - 已验证 `:app:testDebugUnitTest :app:compileDebugKotlin :app:compileDebugAndroidTestKotlin` 通过。
 - 已验证 `:app:assembleRelease` 通过，release APK metadata 为 `versionName=1.6.0`、`versionCode=11`。
-- `connectedDebugAndroidTest` 两次均在安装 APK 阶段失败，0 个测试执行；错误为 `ShellCommandUnresponsiveException`，当前 `adb devices` 为空，需要设备重新连接后补跑和安装。
+- 设备重新授权后，已验证 `:app:connectedDebugAndroidTest` 通过，PJZ110 执行 6 个测试。
+- 已重新安装 release APK 到 PJZ110，包信息为 `versionName=1.6.0`、`versionCode=11`。

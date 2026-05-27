@@ -15,13 +15,20 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.unforgettable.bluetoothcollector.domain.model.ExportFormat
 
+/**
+ * 导出格式选择弹窗。
+ *
+ * 测试标签挂在 AlertDialog 本体，保证弹窗进入独立窗口后仍能被 Compose 测试稳定定位。
+ */
 @Composable
 fun ExportFormatDialog(
     onSelect: (ExportFormat) -> Unit,
     onDismiss: () -> Unit,
 ) {
     AlertDialog(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(CollectorScreenTags.ExportDialog),
         onDismissRequest = onDismiss,
         title = {
             Text(text = "选择导出格式")

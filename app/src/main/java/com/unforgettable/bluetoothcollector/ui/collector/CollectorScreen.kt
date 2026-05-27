@@ -1,7 +1,6 @@
 package com.unforgettable.bluetoothcollector.ui.collector
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -184,12 +183,10 @@ fun CollectorScreen(
                 )
             }
             if (uiState.isExportDialogVisible) {
-                Box(modifier = Modifier.testTag(CollectorScreenTags.ExportDialog)) {
-                    ExportFormatDialog(
-                        onSelect = onExportFormatSelected,
-                        onDismiss = onDismissExportDialog,
-                    )
-                }
+                ExportFormatDialog(
+                    onSelect = onExportFormatSelected,
+                    onDismiss = onDismissExportDialog,
+                )
             }
         }
     }

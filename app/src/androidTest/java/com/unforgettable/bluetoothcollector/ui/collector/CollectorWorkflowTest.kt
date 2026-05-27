@@ -10,6 +10,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import com.unforgettable.bluetoothcollector.data.bluetooth.BluetoothConnectionState
 import com.unforgettable.bluetoothcollector.domain.model.DelimiterStrategy
 import com.unforgettable.bluetoothcollector.domain.model.ExportFormat
@@ -68,7 +69,10 @@ class CollectorWorkflowTest {
             }
         }
 
-        composeRule.onNodeWithText("导出当前记录").performClick()
+        composeRule.onNodeWithTag(CollectorScreenTags.BottomNavData).performClick()
+        composeRule.onNodeWithText("导出当前记录")
+            .performScrollTo()
+            .performClick()
         composeRule.onNodeWithTag(CollectorScreenTags.ExportDialog).assertIsDisplayed()
         composeRule.onNodeWithTag(CollectorScreenTags.ExportCsv).assertIsDisplayed()
         composeRule.onNodeWithTag(CollectorScreenTags.ExportTxt).assertIsDisplayed()

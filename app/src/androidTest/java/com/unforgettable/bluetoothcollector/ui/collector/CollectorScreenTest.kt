@@ -6,6 +6,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import com.unforgettable.bluetoothcollector.data.bluetooth.BluetoothConnectionState
 import com.unforgettable.bluetoothcollector.domain.model.BondedBluetoothDeviceItem
 import com.unforgettable.bluetoothcollector.domain.model.DelimiterStrategy
@@ -54,8 +55,12 @@ class CollectorScreenTest {
             }
         }
 
-        composeRule.onNodeWithTag(CollectorScreenTags.NearbySection).assertIsDisplayed()
-        composeRule.onNodeWithTag(CollectorScreenTags.PairedSection).assertIsDisplayed()
+        composeRule.onNodeWithTag(CollectorScreenTags.NearbySection)
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeRule.onNodeWithTag(CollectorScreenTags.PairedSection)
+            .performScrollTo()
+            .assertIsDisplayed()
     }
 
     @Test
@@ -89,7 +94,13 @@ class CollectorScreenTest {
         }
 
         composeRule.onNodeWithText("连接 未连接").assertIsDisplayed()
-        composeRule.onNodeWithText("01123.456").assertIsDisplayed()
+        composeRule.onNodeWithTag(CollectorScreenTags.BottomNavData).performClick()
+        composeRule.onNodeWithTag(CollectorScreenTags.PreviewSection)
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeRule.onNodeWithText("01123.456")
+            .performScrollTo()
+            .assertIsDisplayed()
     }
 
     @Test
@@ -128,7 +139,9 @@ class CollectorScreenTest {
 
         composeRule.onNodeWithTag(CollectorScreenTags.BottomNavData).performClick()
 
-        composeRule.onNodeWithTag(CollectorScreenTags.PreviewSection).assertIsDisplayed()
+        composeRule.onNodeWithTag(CollectorScreenTags.PreviewSection)
+            .performScrollTo()
+            .assertIsDisplayed()
     }
 
     @Test
@@ -162,8 +175,12 @@ class CollectorScreenTest {
         }
 
         composeRule.onNodeWithTag(CollectorScreenTags.BottomNavData).performClick()
-        composeRule.onNodeWithTag(CollectorScreenTags.ImportedFilePanel).assertIsDisplayed()
-        composeRule.onNodeWithText("暂无导入文件").assertIsDisplayed()
+        composeRule.onNodeWithTag(CollectorScreenTags.ImportedFilePanel)
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeRule.onNodeWithText("暂无导入文件")
+            .performScrollTo()
+            .assertIsDisplayed()
     }
 
     private fun sampleUiState(): CollectorUiState {

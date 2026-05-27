@@ -29,15 +29,17 @@ class ImportProfileRegistryTest {
             modelId = "TS60",
         )
 
-        assertEquals(ImportProfileVerdict.EXPERIMENTAL, profile.verdict)
-        assertEquals("GeoCOM实时测量", profile.liveReceiveLabel)
-        assertEquals("查看TS60连接方案", profile.actionLabel)
-        assertEquals("Captivate推荐WLAN/线缆；Android蓝牙仅实验诊断", profile.protocolSummary)
-        assertEquals(ImportExecutionMode.RECEIVER_STREAM, profile.executionMode)
+        assertEquals(ImportProfileVerdict.SUPPORTED, profile.verdict)
+        assertEquals("WLAN项目接收", profile.liveReceiveLabel)
+        assertEquals("启动WLAN项目接收", profile.actionLabel)
+        assertEquals("Captivate WLAN/FTP项目文件传输；蓝牙仅实验诊断", profile.protocolSummary)
+        assertEquals(ImportExecutionMode.FTP_SERVER, profile.executionMode)
         assertEquals(TransportConnectionMode.RECEIVER, profile.transportMode)
+        assertEquals(TransferRoute.FTP_WLAN_PROJECT_TRANSFER, profile.capability.primaryRoute.route)
+        assertEquals(TransferConfidence.VERIFIED_APP_FTP_RECEIVER, profile.capability.primaryRoute.confidence)
         assertEquals(
             listOf(
-                TransferRoute.GEOCOM_WLAN,
+                TransferRoute.FTP_WLAN_PROJECT_TRANSFER,
                 TransferRoute.CABLE_RS232,
                 TransferRoute.USB_CABLE,
             ),

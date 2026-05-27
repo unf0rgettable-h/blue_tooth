@@ -3,12 +3,18 @@ package com.unforgettable.bluetoothcollector.ui.collector
 import com.unforgettable.bluetoothcollector.data.bluetooth.BluetoothConnectionState
 import com.unforgettable.bluetoothcollector.data.bluetooth.BluetoothReceiverController
 import com.unforgettable.bluetoothcollector.data.bluetooth.ReceiverState
+import com.unforgettable.bluetoothcollector.data.ftp.FtpReceiveState
+import com.unforgettable.bluetoothcollector.data.ftp.FtpReceiveSummary
+import com.unforgettable.bluetoothcollector.data.ftp.FtpReceivedFile
+import com.unforgettable.bluetoothcollector.data.ftp.FtpServerConfig
+import com.unforgettable.bluetoothcollector.data.ftp.FtpServerController
 import com.unforgettable.bluetoothcollector.data.import_.BluetoothClientImportController
 import com.unforgettable.bluetoothcollector.data.protocol.ProtocolHandler
 import com.unforgettable.bluetoothcollector.data.protocol.ProtocolHandlerFactory
 import com.unforgettable.bluetoothcollector.data.import_.ImportedArtifactStoreContract
 import com.unforgettable.bluetoothcollector.data.import_.ImportedFileFormat
 import com.unforgettable.bluetoothcollector.data.import_.ImportedFileInfo
+import com.unforgettable.bluetoothcollector.data.import_.ImportedSourceChannel
 import com.unforgettable.bluetoothcollector.data.import_.ImportProfileVerdict
 import com.unforgettable.bluetoothcollector.data.import_.TransferConfidence
 import com.unforgettable.bluetoothcollector.data.import_.TransferRoute
@@ -407,12 +413,12 @@ class CollectorViewModelTest {
 
         val importProfile = viewModel.uiState.value.currentImportProfile()
 
-        assertEquals(ImportProfileVerdict.EXPERIMENTAL, importProfile.verdict)
-        assertEquals("GeoCOM实时测量", importProfile.liveReceiveLabel)
-        assertEquals("查看TS60连接方案", importProfile.actionLabel)
-        assertEquals("Captivate推荐WLAN/线缆；Android蓝牙仅实验诊断", importProfile.protocolSummary)
+        assertEquals(ImportProfileVerdict.SUPPORTED, importProfile.verdict)
+        assertEquals("WLAN项目接收", importProfile.liveReceiveLabel)
+        assertEquals("启动WLAN项目接收", importProfile.actionLabel)
+        assertEquals("Captivate WLAN/FTP项目文件传输；蓝牙仅实验诊断", importProfile.protocolSummary)
         assertEquals(
-            listOf(TransferRoute.GEOCOM_WLAN, TransferRoute.CABLE_RS232, TransferRoute.USB_CABLE),
+            listOf(TransferRoute.FTP_WLAN_PROJECT_TRANSFER, TransferRoute.CABLE_RS232, TransferRoute.USB_CABLE),
             importProfile.capability.recommendedRoutes.map { it.route },
         )
         assertEquals(
@@ -776,6 +782,68 @@ class CollectorViewModelTest {
         assertEquals("receiver_discoverable_expired", viewModel.uiState.value.statusMessage)
     }
 
+    @Test
+    fun ts60_start_import_starts_ftp_server_without_bluetooth_connection() = runTest(mainDispatcherRule.dispatcher) {
+        val ftpServer = FakeFtpServerController()
+        val viewModel = createViewModel(ftpServerController = ftpServer)
+
+        viewModel.onInstrumentBrandSelected("leica")
+        viewModel.onInstrumentModelSelected("TS60")
+        advanceUntilIdle()
+
+        viewModel.onStartImportRequested()
+        advanceUntilIdle()
+
+        assertEquals(1, ftpServer.startCalls)
+        assertEquals(BluetoothConnectionState.DISCONNECTED, viewModel.uiState.value.connectionState)
+        assertEquals("ftp://192.168.43.1:2121", viewModel.uiState.value.ftpEndpointText)
+        assertEquals("ftp_server_started", viewModel.uiState.value.statusMessage)
+    }
+
+    @Test
+    fun stop_ftp_receive_archives_project_and_saves_imported_artifact() = runTest(mainDispatcherRule.dispatcher) {
+        val ftpRoot = java.nio.file.Files.createTempDirectory("ts60-ftp-root").toFile()
+        val projectFile = File(ftpRoot, "DATA/job.dbx").apply {
+            parentFile?.mkdirs()
+            writeText("DBX")
+        }
+        val ftpServer = FakeFtpServerController(
+            stopSummary = FtpReceiveSummary(
+                rootDirectory = ftpRoot,
+                receivedFiles = listOf(
+                    FtpReceivedFile(
+                        file = projectFile,
+                        relativePath = "DATA/job.dbx",
+                        sizeBytes = projectFile.length(),
+                    ),
+                ),
+            ),
+        )
+        val artifactStore = FakeImportedArtifactStore()
+        val viewModel = createViewModel(
+            ftpServerController = ftpServer,
+            importedArtifactStore = artifactStore,
+        )
+
+        viewModel.onInstrumentBrandSelected("leica")
+        viewModel.onInstrumentModelSelected("TS60")
+        advanceUntilIdle()
+
+        viewModel.onStartImportRequested()
+        advanceUntilIdle()
+        viewModel.onStopFtpReceiveRequested()
+        advanceUntilIdle()
+
+        val info = viewModel.uiState.value.importedFileInfo
+        assertEquals(1, ftpServer.stopCalls)
+        assertEquals(ImportedFileFormat.ZIP, info?.format)
+        assertEquals(ImportedSourceChannel.FTP_WLAN_PROJECT, info?.sourceChannel)
+        assertEquals(1, info?.fileCount)
+        assertEquals(projectFile.length(), info?.totalSizeBytes)
+        assertTrue(info?.file?.exists() == true)
+        assertEquals(info?.file?.absolutePath, artifactStore.load()?.file?.absolutePath)
+    }
+
     private fun createViewModel(
         repository: FakeCollectorDataRepository = FakeCollectorDataRepository(),
         bluetooth: FakeCollectorBluetoothController = FakeCollectorBluetoothController(),
@@ -784,6 +852,7 @@ class CollectorViewModelTest {
         protocolHandlerFactory: FakeProtocolHandlerFactory = FakeProtocolHandlerFactory(),
         clientImportManager: BluetoothClientImportController? = null,
         receiverManager: FakeBluetoothReceiverController? = null,
+        ftpServerController: FtpServerController? = null,
     ): CollectorViewModel {
         return CollectorViewModel(
             repository = repository,
@@ -795,6 +864,7 @@ class CollectorViewModelTest {
             importedArtifactStore = importedArtifactStore,
             clientImportManager = clientImportManager,
             receiverManager = receiverManager,
+            ftpServerController = ftpServerController,
             ioDispatcher = mainDispatcherRule.dispatcher,
             receiveDispatcher = mainDispatcherRule.dispatcher,
         )
@@ -1070,6 +1140,48 @@ private class FakeBluetoothReceiverController : BluetoothReceiverController {
 
     override fun resetState() {
         mutableReceiverState.value = ReceiverState.Idle
+    }
+}
+
+private class FakeFtpServerController(
+    private val stopSummary: FtpReceiveSummary = FtpReceiveSummary(
+        rootDirectory = File(System.getProperty("java.io.tmpdir"), "empty-ftp-root"),
+        receivedFiles = emptyList(),
+    ),
+) : FtpServerController {
+    private val mutableReceiveState = MutableStateFlow<FtpReceiveState>(FtpReceiveState.Idle)
+    override val receiveState: StateFlow<FtpReceiveState> = mutableReceiveState
+    var startCalls: Int = 0
+    var stopCalls: Int = 0
+
+    override suspend fun start(
+        rootDirectory: File,
+        preferredPort: Int,
+    ): FtpServerConfig {
+        startCalls += 1
+        val config = FtpServerConfig(
+            host = "192.168.43.1",
+            port = 2121,
+            username = "survlink",
+            password = "123456",
+            rootDirectory = rootDirectory,
+        )
+        mutableReceiveState.value = FtpReceiveState.Running(
+            host = config.host,
+            port = config.port,
+            username = config.username,
+            password = config.password,
+            rootDirectory = config.rootDirectory,
+            receivedFiles = emptyList(),
+            totalBytes = 0L,
+        )
+        return config
+    }
+
+    override suspend fun stop(): FtpReceiveSummary {
+        stopCalls += 1
+        mutableReceiveState.value = FtpReceiveState.Stopped(stopSummary)
+        return stopSummary
     }
 }
 

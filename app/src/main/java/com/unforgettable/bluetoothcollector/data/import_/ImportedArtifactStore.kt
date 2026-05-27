@@ -22,6 +22,9 @@ class ImportedArtifactStore(
             setProperty(KEY_SIZE_BYTES, artifact.sizeBytes.toString())
             setProperty(KEY_FORMAT, artifact.format.name)
             setProperty(KEY_RECEIVED_AT, artifact.receivedAt)
+            setProperty(KEY_SOURCE_CHANNEL, artifact.sourceChannel.name)
+            setProperty(KEY_FILE_COUNT, artifact.fileCount.toString())
+            setProperty(KEY_TOTAL_SIZE_BYTES, artifact.totalSizeBytes.toString())
         }
         metadataFile.outputStream().use { properties.store(it, null) }
     }
@@ -37,12 +40,20 @@ class ImportedArtifactStore(
         val format = properties.getProperty(KEY_FORMAT)?.let(ImportedFileFormat::valueOf) ?: return null
         val sizeBytes = properties.getProperty(KEY_SIZE_BYTES)?.toLongOrNull() ?: return null
         val receivedAt = properties.getProperty(KEY_RECEIVED_AT) ?: return null
+        val sourceChannel = properties.getProperty(KEY_SOURCE_CHANNEL)
+            ?.let { runCatching { ImportedSourceChannel.valueOf(it) }.getOrNull() }
+            ?: ImportedSourceChannel.BLUETOOTH_STREAM
+        val fileCount = properties.getProperty(KEY_FILE_COUNT)?.toIntOrNull() ?: 1
+        val totalSizeBytes = properties.getProperty(KEY_TOTAL_SIZE_BYTES)?.toLongOrNull() ?: sizeBytes
 
         return ImportedFileInfo(
             file = File(filePath),
             sizeBytes = sizeBytes,
             format = format,
             receivedAt = receivedAt,
+            sourceChannel = sourceChannel,
+            fileCount = fileCount,
+            totalSizeBytes = totalSizeBytes,
         )
     }
 
@@ -60,5 +71,8 @@ class ImportedArtifactStore(
         private const val KEY_SIZE_BYTES = "sizeBytes"
         private const val KEY_FORMAT = "format"
         private const val KEY_RECEIVED_AT = "receivedAt"
+        private const val KEY_SOURCE_CHANNEL = "sourceChannel"
+        private const val KEY_FILE_COUNT = "fileCount"
+        private const val KEY_TOTAL_SIZE_BYTES = "totalSizeBytes"
     }
 }

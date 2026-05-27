@@ -13,12 +13,12 @@ object ImportProfileRegistry {
             brandId == "leica" && modelId == "TS60" -> ImportProfile(
                 brandId = brandId,
                 modelId = modelId,
-                verdict = ImportProfileVerdict.EXPERIMENTAL,
-                liveReceiveLabel = "GeoCOM实时测量",
-                actionLabel = "查看TS60连接方案",
-                guidanceMessage = "TS60 / Captivate：推荐优先使用 WLAN、Cable RS232 或 USB 路径；Android 蓝牙 RFCOMM 仅作为实验诊断入口，不能视为稳定批量导出能力。",
-                protocolSummary = "Captivate推荐WLAN/线缆；Android蓝牙仅实验诊断",
-                executionMode = ImportExecutionMode.RECEIVER_STREAM,
+                verdict = ImportProfileVerdict.SUPPORTED,
+                liveReceiveLabel = "WLAN项目接收",
+                actionLabel = "启动WLAN项目接收",
+                guidanceMessage = "TS60 / Captivate：1.6.0 推荐使用手机热点 + WLAN FTP。手机启动接收服务后，在 Captivate 的 Settings > Tools > FTP data transfer 中上传完整项目文件；蓝牙仅保留实验诊断。",
+                protocolSummary = "Captivate WLAN/FTP项目文件传输；蓝牙仅实验诊断",
+                executionMode = ImportExecutionMode.FTP_SERVER,
                 transportMode = TransportConnectionMode.RECEIVER,
                 capability = ts60CaptivateCapability(),
             )
@@ -76,11 +76,11 @@ object ImportProfileRegistry {
      * 只保留为诊断路径，避免 UI 或后续 agent 把它误判为已支持批量导出。
      */
     private fun ts60CaptivateCapability(): InstrumentTransferCapability {
-        val wlan = TransferRouteOption(
-            route = TransferRoute.GEOCOM_WLAN,
-            confidence = TransferConfidence.RECOMMENDED_VENDOR_ROUTE,
-            label = "GeoCOM WLAN",
-            detail = "推荐路径：通过 Captivate 的 GeoCOM WLAN 连接第三方设备。",
+        val ftpWlan = TransferRouteOption(
+            route = TransferRoute.FTP_WLAN_PROJECT_TRANSFER,
+            confidence = TransferConfidence.VERIFIED_APP_FTP_RECEIVER,
+            label = "WLAN FTP项目传输",
+            detail = "App 在手机热点/WLAN 上开启 FTP 接收服务，Captivate 主动上传完整项目文件。",
         )
         val rs232 = TransferRouteOption(
             route = TransferRoute.CABLE_RS232,
@@ -101,10 +101,10 @@ object ImportProfileRegistry {
             detail = "仅用于实机验证 TS60 是否会主动连入普通 Android RFCOMM 服务。",
         )
         return InstrumentTransferCapability(
-            primaryRoute = androidReceiver,
-            recommendedRoutes = listOf(wlan, rs232, usb),
+            primaryRoute = ftpWlan,
+            recommendedRoutes = listOf(ftpWlan, rs232, usb),
             experimentalRoutes = listOf(androidReceiver),
-            limitation = "普通 Android 手机蓝牙未证明可被 TS60 识别为稳定导出目标。",
+            limitation = "普通 Android 手机蓝牙未证明可被 TS60 识别为稳定完整项目文件导出目标。",
         )
     }
 

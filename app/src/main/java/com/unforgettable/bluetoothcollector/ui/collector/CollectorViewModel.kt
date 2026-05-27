@@ -8,12 +8,19 @@ import com.unforgettable.bluetoothcollector.data.bluetooth.ReceiverDiagnosticEnt
 import com.unforgettable.bluetoothcollector.data.bluetooth.ReceiverDiagnosticSeverity
 import com.unforgettable.bluetoothcollector.data.bluetooth.BluetoothReceiverController
 import com.unforgettable.bluetoothcollector.data.bluetooth.ReceiverState
+import com.unforgettable.bluetoothcollector.data.ftp.FtpReceiveState
+import com.unforgettable.bluetoothcollector.data.ftp.FtpServerController
 import com.unforgettable.bluetoothcollector.data.instrument.InstrumentCatalog
 import com.unforgettable.bluetoothcollector.data.import_.BluetoothClientImportController
 import com.unforgettable.bluetoothcollector.data.import_.BluetoothClientImportResult
 import com.unforgettable.bluetoothcollector.data.import_.ImportedArtifactStoreContract
+import com.unforgettable.bluetoothcollector.data.import_.ImportedFileFormat
+import com.unforgettable.bluetoothcollector.data.import_.ImportedFileInfo
+import com.unforgettable.bluetoothcollector.data.import_.ImportedSourceChannel
 import com.unforgettable.bluetoothcollector.data.import_.ImportExecutionMode
 import com.unforgettable.bluetoothcollector.data.import_.ImportProfileVerdict
+import com.unforgettable.bluetoothcollector.data.import_.ProjectTransferArchiveWriter
+import com.unforgettable.bluetoothcollector.data.import_.TransferRoute
 import com.unforgettable.bluetoothcollector.data.protocol.ProtocolHandler
 import com.unforgettable.bluetoothcollector.data.protocol.ProtocolHandlerFactory
 import com.unforgettable.bluetoothcollector.domain.model.ExportFormat
@@ -48,6 +55,8 @@ class CollectorViewModel(
     private val importedArtifactStore: ImportedArtifactStoreContract? = null,
     private val clientImportManager: BluetoothClientImportController? = null,
     private val receiverManager: BluetoothReceiverController? = null,
+    private val ftpServerController: FtpServerController? = null,
+    private val projectTransferArchiveWriter: ProjectTransferArchiveWriter = ProjectTransferArchiveWriter(),
     private val downloadsSaver: com.unforgettable.bluetoothcollector.data.share.DownloadsSaver? = null,
     private val appContext: android.content.Context? = null,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
@@ -117,7 +126,7 @@ class CollectorViewModel(
                         }
                     }
                     CollectorBluetoothControllerEvent.LinkLost -> {
-                        if (uiState.value.usesReceiverImportMode() &&
+                        if ((uiState.value.usesReceiverImportMode() || uiState.value.supportsExperimentalReceiverMode()) &&
                             (receiverJob?.isActive == true || uiState.value.receiverState != ReceiverState.Idle)
                         ) {
                             appendReceiverDiagnostic(
@@ -183,6 +192,21 @@ class CollectorViewModel(
                             state
                         }
                         current.copy(receiverState = nextState)
+                    }
+                }
+            }
+        }
+        ftpServerController?.let { controller ->
+            scope.launch {
+                controller.receiveState.collectLatest { state ->
+                    mutableUiState.update { current ->
+                        current.copy(
+                            ftpReceiveState = state,
+                            ftpEndpointText = (state as? FtpReceiveState.Running)?.endpointText,
+                            ftpReceivedFiles = (state as? FtpReceiveState.Running)?.receivedFiles
+                                ?: (state as? FtpReceiveState.Stopped)?.summary?.receivedFiles
+                                ?: current.ftpReceivedFiles,
+                        )
                     }
                 }
             }
@@ -457,6 +481,11 @@ class CollectorViewModel(
 
     fun onStartImportRequested() {
         scope.launch {
+            val importProfile = uiState.value.currentImportProfile()
+            if (importProfile.executionMode == ImportExecutionMode.FTP_SERVER) {
+                startFtpProjectTransfer()
+                return@launch
+            }
             if (uiState.value.isReceiving && !uiState.value.isImporting) {
                 mutableUiState.update { it.copy(statusMessage = "import_conflicts_with_live_receive") }
                 return@launch
@@ -465,12 +494,13 @@ class CollectorViewModel(
                 mutableUiState.update { it.copy(statusMessage = "receive_requires_connected_state") }
                 return@launch
             }
-            val importProfile = uiState.value.currentImportProfile()
             when (importProfile.executionMode) {
                 ImportExecutionMode.RECEIVER_STREAM -> {
                     mutableUiState.update { it.copy(statusMessage = "receiver_mode_required_for_selected_model") }
                     return@launch
                 }
+
+                ImportExecutionMode.FTP_SERVER -> return@launch
 
                 ImportExecutionMode.GUIDANCE_ONLY -> {
                     mutableUiState.update { it.copy(statusMessage = importProfile.guidanceMessage) }
@@ -819,7 +849,10 @@ class CollectorViewModel(
 
     fun onStartReceiverRequested() {
         val manager = receiverManager ?: return
-        if (uiState.value.currentImportProfile().executionMode != ImportExecutionMode.RECEIVER_STREAM) {
+        val supportsExperimentalReceiver = uiState.value.supportsExperimentalReceiverMode()
+        if (uiState.value.currentImportProfile().executionMode != ImportExecutionMode.RECEIVER_STREAM &&
+            !supportsExperimentalReceiver
+        ) {
             appendReceiverDiagnostic(
                 code = ReceiverDiagnosticCode.RECEIVER_MODE_NOT_SUPPORTED,
                 severity = ReceiverDiagnosticSeverity.WARNING,
@@ -918,6 +951,12 @@ class CollectorViewModel(
         receiverJob = null
     }
 
+    fun onStopFtpReceiveRequested() {
+        scope.launch {
+            stopFtpProjectTransfer()
+        }
+    }
+
     fun onShareImportedFile() {
         val info = uiState.value.importedFileInfo ?: return
         mutableEvents.tryEmit(CollectorUiEvent.ShareImportedFile(file = info.file, mimeType = info.format.mimeType))
@@ -947,6 +986,96 @@ class CollectorViewModel(
             bytes < 1024 * 1024 -> "${bytes / 1024}KB"
             else -> "${"%.1f".format(bytes / (1024.0 * 1024.0))}MB"
         }
+    }
+
+    /**
+     * 启动 TS60 WLAN/FTP 项目接收。
+     *
+     * FTP channel 不依赖蓝牙连接状态；TS60 通过手机热点访问这里显示的 FTP 地址并主动上传项目文件。
+     */
+    private suspend fun startFtpProjectTransfer() {
+        val controller = ftpServerController
+        if (controller == null) {
+            mutableUiState.update { it.copy(statusMessage = "ftp_server_unavailable") }
+            return
+        }
+        if (uiState.value.ftpReceiveState is FtpReceiveState.Running ||
+            uiState.value.ftpReceiveState is FtpReceiveState.Starting
+        ) {
+            mutableUiState.update { it.copy(statusMessage = "ftp_server_already_running") }
+            return
+        }
+        val root = File(importDirectory, "ts60-ftp-${safeTimestamp(timeProvider.now())}")
+        val config = controller.start(rootDirectory = root)
+        if (config == null) {
+            mutableUiState.update { it.copy(statusMessage = "ftp_server_start_failed") }
+            return
+        }
+        mutableUiState.update {
+            it.copy(
+                ftpEndpointText = config.endpointText,
+                ftpReceivedFiles = emptyList(),
+                statusMessage = "ftp_server_started",
+            )
+        }
+    }
+
+    /**
+     * 停止 FTP 接收并把本轮项目文件归档为 ZIP。
+     *
+     * 接收到多个 DBX/导出文件时，UI 只分享 ZIP，避免外部应用丢失文件夹结构。
+     */
+    private suspend fun stopFtpProjectTransfer() {
+        val controller = ftpServerController
+        if (controller == null) {
+            mutableUiState.update { it.copy(statusMessage = "ftp_server_unavailable") }
+            return
+        }
+        val summary = controller.stop()
+        if (summary.fileCount == 0) {
+            mutableUiState.update {
+                it.copy(
+                    ftpReceiveState = FtpReceiveState.Idle,
+                    ftpEndpointText = null,
+                    statusMessage = "ftp_receive_stopped_no_files",
+                )
+            }
+            return
+        }
+        val archiveFile = File(importDirectory, "ts60-project-${safeTimestamp(timeProvider.now())}.zip")
+        val archive = projectTransferArchiveWriter.writeArchive(
+            sourceDirectory = summary.rootDirectory,
+            outputFile = archiveFile,
+            receivedAt = timeProvider.now(),
+        )
+        val info = ImportedFileInfo(
+            file = archive.file,
+            sizeBytes = archive.file.length(),
+            format = ImportedFileFormat.ZIP,
+            receivedAt = timeProvider.now(),
+            sourceChannel = ImportedSourceChannel.FTP_WLAN_PROJECT,
+            fileCount = archive.fileCount,
+            totalSizeBytes = archive.totalSizeBytes,
+        )
+        importedArtifactStore?.save(info)
+        mutableUiState.update {
+            it.copy(
+                ftpReceiveState = FtpReceiveState.Stopped(summary),
+                ftpEndpointText = null,
+                ftpReceivedFiles = summary.receivedFiles,
+                importedFileInfo = info,
+                statusMessage = "已接收TS60项目：${archive.fileCount}个文件（${formatFileSize(archive.totalSizeBytes)}）",
+            )
+        }
+    }
+
+    private fun safeTimestamp(value: String): String {
+        return value.replace(Regex("[^0-9T]"), "")
+    }
+
+    private fun CollectorUiState.supportsExperimentalReceiverMode(): Boolean {
+        return currentImportProfile().capability.experimentalRoutes
+            .any { it.route == TransferRoute.ANDROID_RFCOMM_RECEIVER }
     }
 
     /**

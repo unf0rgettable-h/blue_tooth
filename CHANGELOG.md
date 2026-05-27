@@ -5,6 +5,33 @@ All notable changes to SurvLink will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2026-05-27
+
+### Added
+
+#### TS60 WLAN/FTP Project Transfer
+- Added an independent WLAN/FTP project-file transfer channel for Leica TS60 / Captivate.
+- The app can start a phone-hosted FTP receiver and show endpoint, port, username, and generated password.
+- Captivate can upload complete project files through `Settings > Tools > FTP data transfer`.
+- Received project files can be stopped and packaged into a ZIP while preserving relative paths.
+- Added TS60 data-page guidance for phone hotspot, Captivate FTP data transfer, and project ZIP sharing.
+
+#### FTP Receiver Core
+- Added a local FTP server implementation with USER/PASS, PASV/EPSV, PORT, LIST/NLST, STOR/APPE, SIZE, MDTM, MKD, CWD/CDUP, NOOP, and QUIT support.
+- Added root-directory path confinement to reject `../` path escape attempts.
+- Added automatic IPv4 endpoint detection for hotspot/WLAN scenarios.
+
+### Changed
+- Version bump to v1.6.0 (versionCode 11).
+- TS60 import profile now uses `executionMode = FTP_SERVER` and `FTP_WLAN_PROJECT_TRANSFER` as the primary route.
+- TS09/FlexLine remains on the verified classic Bluetooth client-stream channel.
+- Android manifest now includes `INTERNET` and `ACCESS_NETWORK_STATE` for WLAN/FTP transfer.
+
+### Testing
+- Added unit tests for FTP server login/upload/list/path confinement.
+- Added unit tests for TS60 FTP profile routing, project ZIP archiving, artifact metadata persistence, and ViewModel FTP flow.
+- Added Compose coverage for the TS60 WLAN/FTP project transfer panel.
+
 ## [1.5.0] - 2026-04-14
 
 ### Added

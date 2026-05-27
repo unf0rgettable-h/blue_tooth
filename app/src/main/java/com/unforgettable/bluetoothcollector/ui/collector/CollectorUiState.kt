@@ -3,6 +3,8 @@ package com.unforgettable.bluetoothcollector.ui.collector
 import com.unforgettable.bluetoothcollector.data.bluetooth.BluetoothConnectionState
 import com.unforgettable.bluetoothcollector.data.bluetooth.ReceiverDiagnosticEntry
 import com.unforgettable.bluetoothcollector.data.bluetooth.ReceiverState
+import com.unforgettable.bluetoothcollector.data.ftp.FtpReceiveState
+import com.unforgettable.bluetoothcollector.data.ftp.FtpReceivedFile
 import com.unforgettable.bluetoothcollector.data.import_.ImportedFileInfo
 import com.unforgettable.bluetoothcollector.data.import_.ImportProfile
 import com.unforgettable.bluetoothcollector.data.import_.ImportProfileRegistry
@@ -46,6 +48,9 @@ data class CollectorUiState(
     val receiverState: ReceiverState = ReceiverState.Idle,
     val isReceiverDiscoverable: Boolean = false,
     val receiverDiagnostics: List<ReceiverDiagnosticEntry> = emptyList(),
+    val ftpReceiveState: FtpReceiveState = FtpReceiveState.Idle,
+    val ftpEndpointText: String? = null,
+    val ftpReceivedFiles: List<FtpReceivedFile> = emptyList(),
 )
 
 fun CollectorUiState.filteredModels(): List<InstrumentModel> {
@@ -88,6 +93,15 @@ fun CollectorUiState.usesReceiverImportMode(): Boolean {
     return currentImportProfile().executionMode == com.unforgettable.bluetoothcollector.data.import_.ImportExecutionMode.RECEIVER_STREAM
 }
 
+/**
+ * 是否使用 TS60 WLAN/FTP 项目文件传输模式。
+ *
+ * 这个判断把 TS60 的主 channel 从蓝牙 receiver 中拆出来，避免 UI 继续把完整项目传输误导为 GeoCOM 实时测量。
+ */
+fun CollectorUiState.usesFtpProjectTransferMode(): Boolean {
+    return currentImportProfile().executionMode == com.unforgettable.bluetoothcollector.data.import_.ImportExecutionMode.FTP_SERVER
+}
+
 fun CollectorUiState.canStartPrimaryImportAction(): Boolean {
     return when (currentImportProfile().executionMode) {
         com.unforgettable.bluetoothcollector.data.import_.ImportExecutionMode.CLIENT_STREAM ->
@@ -98,6 +112,11 @@ fun CollectorUiState.canStartPrimaryImportAction(): Boolean {
                 receiverState is ReceiverState.Completed ||
                 receiverState is ReceiverState.Failed ||
                 receiverState is ReceiverState.Cancelled
+
+        com.unforgettable.bluetoothcollector.data.import_.ImportExecutionMode.FTP_SERVER ->
+            ftpReceiveState is FtpReceiveState.Idle ||
+                ftpReceiveState is FtpReceiveState.Failed ||
+                ftpReceiveState is FtpReceiveState.Stopped
 
         com.unforgettable.bluetoothcollector.data.import_.ImportExecutionMode.GUIDANCE_ONLY ->
             connectionState == BluetoothConnectionState.CONNECTED && !isReceiving

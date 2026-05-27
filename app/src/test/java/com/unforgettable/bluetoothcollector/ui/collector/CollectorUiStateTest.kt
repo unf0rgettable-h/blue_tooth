@@ -1,7 +1,7 @@
 package com.unforgettable.bluetoothcollector.ui.collector
 
 import com.unforgettable.bluetoothcollector.data.bluetooth.BluetoothConnectionState
-import com.unforgettable.bluetoothcollector.data.bluetooth.ReceiverState
+import com.unforgettable.bluetoothcollector.data.ftp.FtpReceiveState
 import com.unforgettable.bluetoothcollector.data.import_.TransferConfidence
 import com.unforgettable.bluetoothcollector.data.import_.TransferRoute
 import org.junit.Assert.assertFalse
@@ -27,21 +27,21 @@ class CollectorUiStateTest {
     }
 
     @Test
-    fun ts60_primary_import_action_uses_receiver_state_instead_of_connection_state() {
+    fun ts60_primary_import_action_uses_ftp_server_state_instead_of_bluetooth_connection_state() {
         val ready = CollectorUiState(
             selectedBrandId = "leica",
             selectedModelId = "TS60",
             connectionState = BluetoothConnectionState.DISCONNECTED,
-            receiverState = ReceiverState.Idle,
+            ftpReceiveState = FtpReceiveState.Idle,
         )
-        val listening = ready.copy(receiverState = ReceiverState.Listening)
+        val running = ready.copy(ftpReceiveState = sampleRunningFtpState())
 
-        assertTrue(ready.usesReceiverImportMode())
+        assertTrue(ready.usesFtpProjectTransferMode())
         assertTrue(ready.canStartPrimaryImportAction())
-        assertFalse(listening.canStartPrimaryImportAction())
+        assertFalse(running.canStartPrimaryImportAction())
         assertEquals(
             listOf(
-                TransferRoute.GEOCOM_WLAN,
+                TransferRoute.FTP_WLAN_PROJECT_TRANSFER,
                 TransferRoute.CABLE_RS232,
                 TransferRoute.USB_CABLE,
             ),
@@ -62,11 +62,11 @@ class CollectorUiStateTest {
 
         assertTrue(state.usesCaptivateProtocol())
         assertEquals(
-            listOf("GeoCOM WLAN", "Cable RS232", "USB Cable"),
+            listOf("WLAN FTP项目传输", "Cable RS232", "USB Cable"),
             state.recommendedTransferRouteLabels(),
         )
         assertEquals("Android蓝牙实验监听", state.experimentalTransferRouteLabel())
-        assertEquals("查看TS60连接方案", state.primaryImportActionLabel())
+        assertEquals("启动WLAN项目接收", state.primaryImportActionLabel())
     }
 
     @Test
@@ -80,5 +80,17 @@ class CollectorUiStateTest {
         assertEquals(listOf("经典蓝牙导入"), state.recommendedTransferRouteLabels())
         assertEquals(null, state.experimentalTransferRouteLabel())
         assertEquals("导入存储数据", state.primaryImportActionLabel())
+    }
+
+    private fun sampleRunningFtpState(): FtpReceiveState.Running {
+        return FtpReceiveState.Running(
+            host = "192.168.43.1",
+            port = 2121,
+            username = "survlink",
+            password = "123456",
+            rootDirectory = java.io.File("/tmp/ftp"),
+            receivedFiles = emptyList(),
+            totalBytes = 0L,
+        )
     }
 }

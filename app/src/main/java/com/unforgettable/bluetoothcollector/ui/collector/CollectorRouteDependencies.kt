@@ -19,8 +19,10 @@ import com.unforgettable.bluetoothcollector.data.bluetooth.PairingRequestCoordin
 import com.unforgettable.bluetoothcollector.data.export.CsvExportWriter
 import com.unforgettable.bluetoothcollector.data.export.GeoComCsvExportWriter
 import com.unforgettable.bluetoothcollector.data.export.TxtExportWriter
+import com.unforgettable.bluetoothcollector.data.ftp.LocalFtpServerManager
 import com.unforgettable.bluetoothcollector.data.import_.BluetoothClientImportManager
 import com.unforgettable.bluetoothcollector.data.import_.ImportedArtifactStore
+import com.unforgettable.bluetoothcollector.data.import_.ProjectTransferArchiveWriter
 import com.unforgettable.bluetoothcollector.data.protocol.DefaultProtocolHandlerFactory
 import com.unforgettable.bluetoothcollector.data.protocol.ProtocolHandlerFactory
 import com.unforgettable.bluetoothcollector.data.share.ShareLauncher
@@ -65,6 +67,8 @@ internal class CollectorViewModelFactory(
     private val importedArtifactStore: ImportedArtifactStore,
     private val clientImportManager: BluetoothClientImportManager,
     private val receiverManager: BluetoothReceiverManager,
+    private val ftpServerController: LocalFtpServerManager,
+    private val projectTransferArchiveWriter: ProjectTransferArchiveWriter,
     private val downloadsSaver: com.unforgettable.bluetoothcollector.data.share.DownloadsSaver,
     private val appContext: Context,
 ) : ViewModelProvider.Factory {
@@ -81,6 +85,8 @@ internal class CollectorViewModelFactory(
                 importedArtifactStore = importedArtifactStore,
                 clientImportManager = clientImportManager,
                 receiverManager = receiverManager,
+                ftpServerController = ftpServerController,
+                projectTransferArchiveWriter = projectTransferArchiveWriter,
                 downloadsSaver = downloadsSaver,
                 appContext = appContext,
             ) as T
@@ -269,6 +275,8 @@ internal data class CollectorAppDependencies(
     val importedArtifactStore: ImportedArtifactStore,
     val clientImportManager: BluetoothClientImportManager,
     val receiverManager: BluetoothReceiverManager,
+    val ftpServerController: LocalFtpServerManager,
+    val projectTransferArchiveWriter: ProjectTransferArchiveWriter,
     val downloadsSaver: com.unforgettable.bluetoothcollector.data.share.DownloadsSaver,
 )
 
@@ -346,6 +354,8 @@ internal object CollectorAppDependenciesHolder {
                 bluetoothAdapter = bluetoothAdapter,
                 permissionChecker = permissionChecker,
             ),
+            ftpServerController = LocalFtpServerManager(),
+            projectTransferArchiveWriter = ProjectTransferArchiveWriter(),
             downloadsSaver = com.unforgettable.bluetoothcollector.data.share.DownloadsSaver(),
         )
     }

@@ -20,20 +20,21 @@
 
 ## 🌟 为什么选择 SurvLink？
 
-**SurvLink 是首个支持徕卡 Captivate 系列（TS60/TS16/TS50/MS60）GeoCOM 双向通信协议的开源 Android 应用。**
+**SurvLink 是面向全站仪数据落地的开源 Android 应用：TS09/FlexLine 走经典蓝牙导入，TS60/Captivate 1.6.0 新增手机热点 + WLAN FTP 完整项目文件接收。**
 
 ### 核心优势
 
-- 🎯 **真正的实时测量** - 支持 GeoCOM 双向协议，TS60 可实时触发测量并显示结果
+- 🎯 **TS60 完整项目文件接收** - 手机端开启 FTP 服务，Captivate 通过 WLAN/热点上传 job/dbx/csv/xml/dxf/zip
+- 📡 **普通蓝牙稳定保留** - TS09/FlexLine 继续使用已验证的经典蓝牙导入 channel
 - 📊 **专业数据导出** - CSV 导出包含弧度、度、gon 三种角度单位
-- 🔄 **完全向后兼容** - FlexLine 系列（TS02-TS13）继续使用 GSI-Online 协议
+- 🔄 **独立 channel 架构** - TS09 蓝牙 channel 与 TS60 WLAN/FTP channel 分离，避免协议假设互相污染
 - 🧪 **高质量代码** - 80%+ 测试覆盖率，经过严格的单元测试和集成测试
 - 🆓 **完全开源** - MIT 许可证，代码透明，社区驱动
 
 ### 解决的痛点
 
-❌ **之前**: TS60 用户无法实时预览测量数据，文件导出不可用  
-✅ **现在**: 完整的 GeoCOM 协议支持，连续轮询或单次测量，实时角度显示
+❌ **之前**: TS60 完整项目文件无法稳定从仪器落到普通 Android 手机
+✅ **现在**: APP 可在手机热点/WLAN 上启动 FTP 接收服务，TS60 通过 Captivate FTP data transfer 上传完整项目文件
 
 ---
 
@@ -42,7 +43,7 @@
 ### 下载安装
 
 1. 前往 [Releases 页面](https://github.com/unf0rgettable-h/blue_tooth/releases/latest)
-2. 下载 `survlink-v1.5.0-signed.apk`
+2. 下载 `survlink-v1.6.0-signed.apk`
 3. 在 Android 设备上启用"允许安装未知应用"
 4. 安装 APK
 
@@ -57,60 +58,58 @@
 4. 数据页面 → 开始接收
 5. 在仪器上测量，数据自动显示
 
-#### Captivate 仪器（TS60/TS16/TS50/MS60）⭐ 新功能
-1. 打开应用 → 蓝牙页面
-2. 选择 Captivate 仪器（如 TS60）
-3. 连接配对的设备
-4. 数据页面 → 看到 GeoCOM 控制面板：
-   - **连续轮询**: 点击"Start Auto"，每 2 秒自动测量
-   - **单次测量**: 点击"Measure Once"，按需触发
-5. 实时显示：水平角、垂直角、斜距
-6. 导出 CSV：包含 rad/deg/gon 三种单位
+#### TS60 / Captivate 项目文件传输（v1.6.0）
+1. 手机开启热点，并让 TS60 连接该热点
+2. APP 中选择 Leica TS60 → 数据页面 → 点击 `启动WLAN项目接收`
+3. APP 会显示 FTP 地址、端口、用户名和密码
+4. TS60 打开 `Settings > Tools > FTP data transfer`
+5. 在 TS60 中输入 APP 显示的 FTP 信息，选择 job/dbx/csv/xml/dxf/zip 上传
+6. APP 接收后可 `停止并打包项目`，再分享或保存到下载目录
 
 ---
 
 ## 📱 功能特性
 
-### GeoCOM 协议支持 ✨ v1.4.0 新增
+### TS60 WLAN/FTP 项目传输 ✨ v1.6.0 新增
 
 <table>
 <tr>
 <td width="50%">
 
-**双向通信**
-- App 可发送命令到仪器
-- 支持连续轮询模式（2秒间隔）
-- 支持单次测量模式
-- Mutex 保护的命令序列化
+**完整项目接收**
+- 手机端内置 FTP Server
+- 支持手机热点/WLAN 局域网
+- 支持 job/dbx/csv/xml/dxf/zip
+- 多文件项目可归档为 ZIP
 
 </td>
 <td width="50%">
 
-**实时显示**
-- 水平角（Hz）精确到 0.0001°
-- 垂直角（V）精确到 0.0001°
-- 斜距精确到 0.001m
-- 格式化显示，易于阅读
+**独立传输 channel**
+- TS09 继续经典蓝牙导入
+- TS60 使用 WLAN/FTP 项目接收
+- 蓝牙 RFCOMM 仅保留实验诊断
+- 错误状态和接收状态分离
 
 </td>
 </tr>
 <tr>
 <td width="50%">
 
-**多单位导出**
-- CSV 包含三种角度单位
-- 弧度（radians）
-- 度（degrees）
-- gon（百分度）
+**项目包处理**
+- 保留 Captivate 目录结构
+- DBX 原始文件完整保存
+- ZIP 项目包便于分享/归档
+- 文件数量和总大小可见
 
 </td>
 <td width="50%">
 
-**协议抽象**
-- ProtocolHandler 接口
-- 自动协议选择
-- 向后兼容 FlexLine
-- 易于扩展新协议
+**GeoCOM 能力保留**
+- GeoCOM 协议层仍在代码中保留
+- 后续可扩展实时测量控制
+- 当前 1.6.0 主目标是完整项目文件落地
+- 不把项目文件传输误判为测量轮询
 
 </td>
 </tr>
@@ -121,8 +120,8 @@
 | 品牌 | 型号 | 固件 | 协议 | 蓝牙 |
 |------|------|------|------|------|
 | Leica | TS02, TS06, TS07, TS09, TS13 | FlexLine | GSI-Online | SPP ~15m |
-| Leica | **TS16, TS50, TS60** ⭐ | Captivate | **GeoCOM** ✨ | SPP + RH16 400m |
-| Leica | **MS60** ⭐ | Captivate | **GeoCOM** ✨ | SPP + RH16 400m |
+| Leica | **TS60** ⭐ | Captivate | **WLAN FTP项目文件接收** ✨ | 手机热点/WLAN |
+| Leica | TS16, TS50, MS60 | Captivate | GeoCOM 代码层保留，项目传输待扩展 | SPP + WLAN |
 | Leica | iCR80 | iCON | GSI-Online | SPP + CCD6 400m |
 | Sokkia | SX/CX/iM/iX 系列 | — | 被动流 | SPP |
 | Topcon | ES/MS/GT 系列 | — | 被动流 | SPP |
@@ -134,22 +133,19 @@
 
 ## 🏗️ 技术架构
 
-### 协议抽象层
+### 独立数据 channel
 
 ```
-BluetoothConnectionManager (读 + 写)
-    ↓
-ProtocolHandler (接口)
-    ├─ PassiveStreamProtocolHandler (GSI-Online)
-    └─ GeoComProtocolHandler (GeoCOM RPC)
-        ↓
-    GeoComClient (Mutex + 超时保护)
-        ↓
-CollectorViewModel (协议感知)
-    ↓
-MeasurementRecord (扩展 GeoCOM 字段)
-    ↓
-ExportWriter (多格式导出)
+TS09/FlexLine
+    BluetoothConnectionManager
+    → BluetoothClientImportManager
+    → ImportedFileInfo
+
+TS60/Captivate
+    LocalFtpServerManager
+    → Captivate FTP data transfer 上传项目文件
+    → ProjectTransferArchiveWriter
+    → ZIP 项目包 / ImportedFileInfo
 ```
 
 ### 技术栈
@@ -160,6 +156,7 @@ ExportWriter (多格式导出)
 - **数据库**: Room (SQLite)
 - **并发**: Kotlin Coroutines + StateFlow
 - **蓝牙**: Classic Bluetooth SPP
+- **WLAN**: 手机端本地 FTP Server（TS60 项目文件接收）
 - **测试**: JUnit + Robolectric (80%+ 覆盖率)
 
 ### 代码质量
@@ -235,24 +232,25 @@ Made with ❤️ for surveyors worldwide
 
 # 📡 SurvLink
 
-**Professional Total Station Bluetooth Data Collector**
+**Professional Total Station Bluetooth and WLAN Project Data Collector**
 
 ## 🌟 Why SurvLink?
 
-**SurvLink is the first open-source Android app supporting Leica Captivate series (TS60/TS16/TS50/MS60) GeoCOM bidirectional communication protocol.**
+**SurvLink gets total-station data onto Android phones: TS09/FlexLine keeps the classic Bluetooth import channel, while TS60/Captivate v1.6.0 adds phone-hotspot + WLAN FTP full project-file transfer.**
 
 ### Key Advantages
 
-- 🎯 **True Real-Time Measurement** - GeoCOM bidirectional protocol support, TS60 can trigger measurements and display results in real-time
+- 🎯 **TS60 Full Project Transfer** - Phone-hosted FTP receiver for Captivate job/dbx/csv/xml/dxf/zip uploads
+- 📡 **Stable Bluetooth Path Preserved** - TS09/FlexLine remains on the verified classic Bluetooth channel
 - 📊 **Professional Data Export** - CSV export includes angles in radians, degrees, and gon
-- 🔄 **Fully Backward Compatible** - FlexLine series (TS02-TS13) continues using GSI-Online protocol
+- 🔄 **Independent Channel Architecture** - Bluetooth import and WLAN/FTP project transfer stay separated
 - 🧪 **High-Quality Code** - 80%+ test coverage with rigorous unit and integration tests
 - 🆓 **Fully Open Source** - MIT License, transparent code, community-driven
 
 ### Problem Solved
 
-❌ **Before**: TS60 users couldn't preview measurements in real-time, file export unavailable  
-✅ **Now**: Full GeoCOM protocol support, continuous polling or single-shot measurement, real-time angle display
+❌ **Before**: TS60 full project files could not reliably land on a regular Android phone
+✅ **Now**: The app starts an FTP receiver over phone hotspot/WLAN, and Captivate uploads complete project files through FTP data transfer
 
 ---
 
@@ -261,7 +259,7 @@ Made with ❤️ for surveyors worldwide
 ### Download & Install
 
 1. Go to [Releases page](https://github.com/unf0rgettable-h/blue_tooth/releases/latest)
-2. Download `survlink-v1.5.0-signed.apk`
+2. Download `survlink-v1.6.0-signed.apk`
 3. Enable "Install from unknown sources" on your Android device
 4. Install the APK
 
@@ -276,60 +274,58 @@ Made with ❤️ for surveyors worldwide
 4. Data page → Start Receiving
 5. Take measurements on instrument, data appears automatically
 
-#### Captivate Instruments (TS60/TS16/TS50/MS60) ⭐ New Feature
-1. Open app → Bluetooth page
-2. Select Captivate instrument (e.g., TS60)
-3. Connect to paired device
-4. Data page → See GeoCOM control panel:
-   - **Continuous Polling**: Click "Start Auto", auto-measure every 2 seconds
-   - **Single-Shot**: Click "Measure Once", trigger on demand
-5. Real-time display: Horizontal angle, Vertical angle, Slope distance
-6. Export CSV: Includes rad/deg/gon units
+#### TS60 / Captivate Project Files (v1.6.0)
+1. Turn on the phone hotspot and connect the TS60 to it
+2. In the app, select Leica TS60 → Data page → tap `启动WLAN项目接收`
+3. The app shows FTP host, port, username, and password
+4. On the TS60, open `Settings > Tools > FTP data transfer`
+5. Enter the FTP details and upload job/dbx/csv/xml/dxf/zip files
+6. Tap `停止并打包项目` in the app, then share or save the ZIP package
 
 ---
 
 ## 📱 Features
 
-### GeoCOM Protocol Support ✨ New in v1.4.0
+### TS60 WLAN/FTP Project Transfer ✨ New in v1.6.0
 
 <table>
 <tr>
 <td width="50%">
 
-**Bidirectional Communication**
-- App can send commands to instrument
-- Continuous polling mode (2s interval)
-- Single-shot measurement mode
-- Mutex-protected command serialization
+**Complete Project Reception**
+- Phone-hosted FTP server
+- Phone hotspot / shared WLAN
+- job/dbx/csv/xml/dxf/zip uploads
+- Multi-file projects packaged as ZIP
 
 </td>
 <td width="50%">
 
-**Real-Time Display**
-- Horizontal angle (Hz) to 0.0001°
-- Vertical angle (V) to 0.0001°
-- Slope distance to 0.001m
-- Formatted display, easy to read
+**Independent Channels**
+- TS09 keeps Bluetooth import
+- TS60 uses WLAN/FTP project transfer
+- Bluetooth RFCOMM remains diagnostic only
+- Separate state and error handling
 
 </td>
 </tr>
 <tr>
 <td width="50%">
 
-**Multi-Unit Export**
-- CSV includes three angle units
-- Radians
-- Degrees
-- Gon (gradians)
+**Project Package Handling**
+- Captivate folder structure preserved
+- DBX files saved intact
+- ZIP package for share/archive
+- File count and total size visible
 
 </td>
 <td width="50%">
 
-**Protocol Abstraction**
-- ProtocolHandler interface
-- Automatic protocol selection
-- Backward compatible with FlexLine
-- Easy to extend new protocols
+**GeoCOM Code Retained**
+- GeoCOM protocol layer remains in code
+- Future live measurement expansion stays possible
+- v1.6.0 focuses on full project files
+- File transfer is not treated as measurement polling
 
 </td>
 </tr>
@@ -340,8 +336,8 @@ Made with ❤️ for surveyors worldwide
 | Brand | Models | Firmware | Protocol | Bluetooth |
 |-------|--------|----------|----------|-----------|
 | Leica | TS02, TS06, TS07, TS09, TS13 | FlexLine | GSI-Online | SPP ~15m |
-| Leica | **TS16, TS50, TS60** ⭐ | Captivate | **GeoCOM** ✨ | SPP + RH16 400m |
-| Leica | **MS60** ⭐ | Captivate | **GeoCOM** ✨ | SPP + RH16 400m |
+| Leica | **TS60** ⭐ | Captivate | **WLAN FTP project transfer** ✨ | Phone hotspot/WLAN |
+| Leica | TS16, TS50, MS60 | Captivate | GeoCOM code retained, project transfer pending | SPP + WLAN |
 | Leica | iCR80 | iCON | GSI-Online | SPP + CCD6 400m |
 | Sokkia | SX/CX/iM/iX Series | — | Passive | SPP |
 | Topcon | ES/MS/GT Series | — | Passive | SPP |

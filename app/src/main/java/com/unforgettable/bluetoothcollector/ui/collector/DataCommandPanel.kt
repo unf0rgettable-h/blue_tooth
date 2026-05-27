@@ -35,12 +35,14 @@ internal fun DataActionPanel(
     onSingleMeasureRequested: () -> Unit,
     onStartImportRequested: () -> Unit,
     onStartReceiverRequested: () -> Unit,
+    onStopFtpReceiveRequested: () -> Unit = {},
     onClearRequested: () -> Unit,
     onExportRequested: () -> Unit,
     onSaveToLocalRequested: () -> Unit,
 ) {
     val importProfile = uiState.currentImportProfile()
-    val isGeoCom = uiState.usesCaptivateProtocol()
+    val isFtpProjectTransfer = uiState.usesFtpProjectTransferMode()
+    val isGeoCom = uiState.usesCaptivateProtocol() && !isFtpProjectTransfer
 
     PanelCard(
         title = "数据控制",
@@ -72,7 +74,9 @@ internal fun DataActionPanel(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            if (isGeoCom) {
+            if (isFtpProjectTransfer) {
+                // TS60 1.6.0 主链路是完整项目文件 FTP 接收；实时测量按钮不在这里混用。
+            } else if (isGeoCom) {
                 GeoComControlPanel(
                     isConnected = uiState.connectionState == BluetoothConnectionState.CONNECTED,
                     isMeasuring = uiState.isReceiving && !uiState.isImporting,
@@ -94,6 +98,7 @@ internal fun DataActionPanel(
                     when (importProfile.executionMode) {
                         ImportExecutionMode.CLIENT_STREAM -> onStartImportRequested()
                         ImportExecutionMode.RECEIVER_STREAM -> onStartReceiverRequested()
+                        ImportExecutionMode.FTP_SERVER -> onStartImportRequested()
                         ImportExecutionMode.GUIDANCE_ONLY -> onStartImportRequested()
                     }
                 },
@@ -103,10 +108,14 @@ internal fun DataActionPanel(
             }
             if (!isGeoCom || uiState.isImporting) {
                 OutlinedButton(
-                    onClick = onStopReceivingRequested,
-                    enabled = uiState.isReceiving,
+                    onClick = if (isFtpProjectTransfer) onStopFtpReceiveRequested else onStopReceivingRequested,
+                    enabled = if (isFtpProjectTransfer) {
+                        uiState.ftpReceiveState is com.unforgettable.bluetoothcollector.data.ftp.FtpReceiveState.Running
+                    } else {
+                        uiState.isReceiving
+                    },
                 ) {
-                    Text(text = if (uiState.isImporting) "中止导入" else "停止接收")
+                    Text(text = if (isFtpProjectTransfer) "停止并打包项目" else if (uiState.isImporting) "中止导入" else "停止接收")
                 }
             }
             OutlinedButton(

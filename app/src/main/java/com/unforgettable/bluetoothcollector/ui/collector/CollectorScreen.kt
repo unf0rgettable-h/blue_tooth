@@ -37,6 +37,7 @@ object CollectorScreenTags {
     const val ExportDialog = "export_dialog"
     const val ExportCsv = "export_csv"
     const val ExportTxt = "export_txt"
+    const val FtpProjectTransferPanel = "ftp_project_transfer_panel"
 }
 
 /**
@@ -62,6 +63,7 @@ fun CollectorScreen(
     onStartImportRequested: () -> Unit,
     onStartReceiverRequested: () -> Unit,
     onStopReceiverRequested: () -> Unit,
+    onStopFtpReceiveRequested: () -> Unit = {},
     onShareImportedFile: () -> Unit,
     onSaveToLocalRequested: () -> Unit,
     onClearRequested: () -> Unit,
@@ -146,6 +148,7 @@ fun CollectorScreen(
                             onSingleMeasureRequested = onSingleMeasureRequested,
                             onStartImportRequested = onStartImportRequested,
                             onStartReceiverRequested = onStartReceiverRequested,
+                            onStopFtpReceiveRequested = onStopFtpReceiveRequested,
                             onClearRequested = onClearRequested,
                             onExportRequested = onExportRequested,
                             onSaveToLocalRequested = onSaveToLocalRequested,
@@ -157,6 +160,11 @@ fun CollectorScreen(
                             showReceiverMode = uiState.usesReceiverImportMode(),
                             onStartReceiver = onStartReceiverRequested,
                             onStopReceiver = onStopReceiverRequested,
+                        )
+                        FtpProjectTransferPanel(
+                            uiState = uiState,
+                            onStartFtpReceive = onStartImportRequested,
+                            onStopFtpReceive = onStopFtpReceiveRequested,
                         )
                         ImportedFilePanel(
                             fileInfo = uiState.importedFileInfo,

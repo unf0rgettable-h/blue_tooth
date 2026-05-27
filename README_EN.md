@@ -2,7 +2,7 @@
 
 Android app for receiving measurement data from total stations via Bluetooth. Built for surveyors who need a simple, reliable way to get data off their instruments and onto their phones.
 
-> Latest release: `v1.5.0` — **TS09/TS60 export-path split, TS09 import completion fix, TS60 experimental export receiver, UTF-8 BOM export compatibility**
+> Latest release: `v1.6.0` — **TS60 WLAN/FTP full project-file transfer, independent Bluetooth/FTP channels, Android install package v1.6.0**
 
 ## What it does
 
@@ -10,13 +10,13 @@ Connect your phone to a total station over classic Bluetooth, then:
 
 **Real-time collection** — press "Start Receiving" on the phone, take measurements on the instrument, watch data appear live in the preview list.
 
-**GeoCOM protocol support (NEW in v1.4.0)** — Leica Captivate instruments (TS60/TS16/TS50/MS60) now support bidirectional communication with:
+**GeoCOM protocol layer (retained from v1.4.0)** — the codebase keeps the Captivate GeoCOM RPC layer for future live-measurement expansion:
 - **Continuous polling mode**: Auto-measure every 2 seconds with "Start Auto" button
 - **Single-shot mode**: Trigger individual measurements with "Measure Once" button
 - **Real-time angle display**: View horizontal/vertical angles and slope distance instantly
 - **Multi-unit export**: CSV export includes angles in radians, degrees, and gon
 
-**Batch file import / export to phone** — use the Data page to enter the model-aware flow. TS09 keeps the connected client import path. TS60 now exposes an experimental export receiver mode for instrument-to-phone transfer.
+**Batch file import / export to phone** — use the Data page to enter the model-aware flow. TS09 keeps the connected Bluetooth client import path. TS60 now uses a WLAN/FTP receiver: the phone starts an FTP server, Captivate uploads complete project files through the phone hotspot or shared WLAN.
 
 **Export & share** — export collected records as CSV or TXT, share via any Android app, or save directly to the Downloads folder.
 
@@ -25,7 +25,8 @@ Connect your phone to a total station over classic Bluetooth, then:
 | Brand | Models | Firmware | Protocol | Bluetooth |
 |-------|--------|----------|----------|-----------|
 | Leica | TS02, TS06, TS07, TS09, TS13 | FlexLine | GSI-Online (passive) | SPP ~15m |
-| Leica | TS16, TS50, TS60 | Captivate | **GeoCOM (bidirectional)** ✨ | SPP + optional RH16 400m |
+| Leica | TS60 | Captivate | **WLAN FTP project transfer** ✨ | Phone hotspot / WLAN |
+| Leica | TS16, TS50 | Captivate | GeoCOM code path retained, project transfer pending | SPP + WLAN |
 | Leica | MS60 MultiStation | Captivate | **GeoCOM (bidirectional)** ✨ | SPP + optional RH16 400m |
 | Leica | iCON iCR80 | iCON | GSI-Online (passive) | SPP + CCD6 400m |
 | Sokkia | SX-103/105/113, CX-101/105, iM-52/105, iX-1003 | — | Passive stream | SPP |
@@ -45,20 +46,20 @@ All instruments communicate over classic Bluetooth Serial Port Profile (SPP).
 
 - **Live receive:** 
   - **FlexLine instruments**: Passive GSI-Online protocol, instrument pushes data automatically
-  - **Captivate instruments (NEW)**: Active GeoCOM protocol with two modes:
+  - **Captivate instruments**: GeoCOM code path remains available for future live-measurement expansion:
     - **Continuous polling**: "Start Auto" triggers measurements every 2 seconds
     - **Single-shot**: "Measure Once" triggers one measurement on demand
 - **Real-time display**: Preview rows show measurement data with selectable/copyable text
   - **Captivate instruments**: Display includes horizontal angle, vertical angle, and slope distance in real-time
 - **TS09 batch import:** Supported through the in-app import flow
-- **TS60 live measurement (NEW):** Full GeoCOM protocol support with bidirectional communication
+- **TS60 project transfer (NEW in v1.6.0):** WLAN/FTP receiver for complete project files from Captivate
 - **UI layout:** Two-page bottom-navigation (Bluetooth setup + Data actions)
 
 ## Quick start
 
 ### Install from release
 
-Download `survlink-v1.5.0-signed.apk` from the [Releases](https://github.com/unf0rgettable-h/blue_tooth/releases) page. Enable "Install from unknown sources" on your Android device.
+Download `survlink-v1.6.0-signed.apk` from the [Releases](https://github.com/unf0rgettable-h/blue_tooth/releases) page. Enable "Install from unknown sources" on your Android device.
 
 ### Build from source
 
@@ -83,20 +84,13 @@ export ANDROID_SDK_ROOT=/path/to/android-sdk
 6. Take measurements on the instrument — data appears automatically in real-time
 7. Use `导出并分享` to export as CSV/TXT
 
-### For Captivate Instruments (TS60/TS16/TS50/MS60) — NEW in v1.4.0
-1. Open the app and go to the `蓝牙` page
-2. Select your Captivate instrument (e.g., TS60)
-3. Turn on Bluetooth, pair with your total station
-4. Select the paired device, tap `连接`
-5. Go to the `数据` page — you'll see GeoCOM control panel:
-   - **Start Auto**: Continuous polling mode (measurements every 2 seconds)
-   - **Measure Once**: Single-shot measurement on demand
-   - **Stop**: Stop continuous polling
-6. Real-time display shows:
-   - Horizontal angle (Hz) in degrees
-   - Vertical angle (V) in degrees
-   - Slope distance in meters
-7. Use `导出并分享` to export — CSV includes angles in radians, degrees, and gon
+### For TS60 / Captivate project files — NEW in v1.6.0
+1. Turn on the phone hotspot and connect the TS60 to that hotspot
+2. In the app, select Leica TS60, go to `数据`, then tap `启动WLAN项目接收`
+3. The app shows FTP host, port, username, and password
+4. On the TS60, open `Settings > Tools > FTP data transfer`
+5. Enter the FTP details shown by the app and upload job/dbx/csv/xml/dxf/zip files
+6. Back in the app, tap `停止并打包项目`, then share or save the generated ZIP package
 
 ### Batch Import (All Models)
 1. Go to the `数据` page
@@ -119,6 +113,7 @@ app/src/main/java/com/unforgettable/bluetoothcollector/
 ├── data/
 │   ├── bluetooth/       # connection, discovery, pairing, stream parsing
 │   ├── export/          # CSV/TXT export writers (including GeoCOM format)
+│   ├── ftp/             # TS60 WLAN/FTP project receiver (NEW in v1.6.0)
 │   ├── import_/         # raw file reception + format detection
 │   ├── instrument/      # brand/model catalog
 │   ├── protocol/        # protocol abstraction layer (NEW in v1.4.0)
@@ -157,7 +152,8 @@ Single-activity, two-page MVVM with protocol abstraction:
 - Two independent receive paths:
   - **Live mode (passive)**: `blockingReadBytes()` → `TextStreamRecordParser` → `MeasurementRecord` → Room DB
   - **Live mode (GeoCOM)**: `GeoComClient.sendCommand()` → `GeoComResponse.parse()` → `GeoComMeasurement` → `MeasurementRecord` → Room DB
-  - **Import mode**: `rawFileReceiveLoop()` → `ByteArrayOutputStream` → file with auto-detected format
+  - **Bluetooth import mode**: `BluetoothClientImportManager` → file with auto-detected format
+  - **TS60 FTP project mode**: `LocalFtpServerManager` → project directory → ZIP archive → imported artifact
 
 **GeoCOM Protocol Implementation:**
 - `GeoComClient`: Mutex-protected command serialization with bounded timeout (5s max)
@@ -174,6 +170,7 @@ Bluetooth disconnect detection uses two redundant mechanisms:
 
 | Version | Date | Changes |
 |---------|------|---------|
+| v1.6.0 | 2026-05-27 | **TS60 WLAN/FTP Project Transfer** — phone-hosted FTP receiver for complete Captivate project files, independent Bluetooth/FTP channels, project ZIP packaging, Android network permissions, versionCode 11 |
 | v1.4.0 | 2026-04-05 | **GeoCOM Protocol Support** — Full bidirectional communication for Leica Captivate instruments (TS60/TS16/TS50/MS60): continuous polling mode, single-shot measurement, real-time angle display (Hz/V/distance), multi-unit CSV export (rad/deg/gon), protocol abstraction layer, Room schema migration, 80%+ test coverage |
 | v1.3.3 | 2026-04-03 | TS60 profile now switches both live and export actions to Captivate-specific labels/protocol summary |
 | v1.3.2 | 2026-04-03 | Unlock instrument selection after disconnect/restart, auto-clear current session on actual selection change, keep imported files independent |

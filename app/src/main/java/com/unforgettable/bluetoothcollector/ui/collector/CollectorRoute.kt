@@ -44,6 +44,8 @@ fun CollectorRoute() {
             importedArtifactStore = dependencies.importedArtifactStore,
             clientImportManager = dependencies.clientImportManager,
             receiverManager = dependencies.receiverManager,
+            ftpServerController = dependencies.ftpServerController,
+            projectTransferArchiveWriter = dependencies.projectTransferArchiveWriter,
             downloadsSaver = dependencies.downloadsSaver,
             appContext = appContext,
         )
@@ -196,6 +198,7 @@ fun CollectorRoute() {
             }
         },
         onStopReceiverRequested = viewModel::onStopReceiverRequested,
+        onStopFtpReceiveRequested = viewModel::onStopFtpReceiveRequested,
         onShareImportedFile = viewModel::onShareImportedFile,
         onSaveToLocalRequested = viewModel::onSaveToLocalRequested,
         onClearRequested = viewModel::onClearRequested,

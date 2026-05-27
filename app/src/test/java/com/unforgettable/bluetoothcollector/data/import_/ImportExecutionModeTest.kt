@@ -16,6 +16,11 @@ class ImportExecutionModeTest {
     }
 
     @Test
+    fun ftp_server_is_the_ts60_project_transfer_mode() {
+        assertEquals("FTP_SERVER", ImportExecutionMode.FTP_SERVER.name)
+    }
+
+    @Test
     fun guidance_only_blocks_import_execution() {
         assertEquals("GUIDANCE_ONLY", ImportExecutionMode.GUIDANCE_ONLY.name)
     }

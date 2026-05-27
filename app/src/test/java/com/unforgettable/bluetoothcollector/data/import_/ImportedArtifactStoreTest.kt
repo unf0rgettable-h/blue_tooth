@@ -25,6 +25,35 @@ class ImportedArtifactStoreTest {
         assertNotNull(reloaded)
         assertEquals(artifact.file.absolutePath, reloaded?.file?.absolutePath)
         assertEquals(artifact.format, reloaded?.format)
+        assertEquals(artifact.sourceChannel, reloaded?.sourceChannel)
+        assertEquals(artifact.fileCount, reloaded?.fileCount)
+        assertEquals(artifact.totalSizeBytes, reloaded?.totalSizeBytes)
+    }
+
+    @Test
+    fun ftp_project_artifact_metadata_survives_reload() {
+        val root = tempFolder.newFolder("artifact-store")
+        val store = ImportedArtifactStore(root)
+        val zipFile = File(root, "ts60-project.zip").apply {
+            writeText("zip bytes")
+        }
+        val artifact = ImportedFileInfo(
+            file = zipFile,
+            sizeBytes = zipFile.length(),
+            format = ImportedFileFormat.ZIP,
+            receivedAt = "2026-05-27T21:00:00+08:00",
+            sourceChannel = ImportedSourceChannel.FTP_WLAN_PROJECT,
+            fileCount = 3,
+            totalSizeBytes = 12_345L,
+        )
+
+        store.save(artifact)
+
+        val reloaded = ImportedArtifactStore(root).load()
+        assertNotNull(reloaded)
+        assertEquals(ImportedSourceChannel.FTP_WLAN_PROJECT, reloaded?.sourceChannel)
+        assertEquals(3, reloaded?.fileCount)
+        assertEquals(12_345L, reloaded?.totalSizeBytes)
     }
 
     @Test

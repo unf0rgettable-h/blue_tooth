@@ -8,6 +8,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import com.unforgettable.bluetoothcollector.data.bluetooth.BluetoothConnectionState
+import com.unforgettable.bluetoothcollector.data.ftp.FtpReceiveState
 import com.unforgettable.bluetoothcollector.domain.model.BondedBluetoothDeviceItem
 import com.unforgettable.bluetoothcollector.domain.model.DelimiterStrategy
 import com.unforgettable.bluetoothcollector.domain.model.DiscoveredBluetoothDeviceItem
@@ -179,6 +180,65 @@ class CollectorScreenTest {
             .performScrollTo()
             .assertIsDisplayed()
         composeRule.onNodeWithText("暂无导入文件")
+            .performScrollTo()
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun ts60_data_page_shows_wlan_ftp_project_transfer_panel() {
+        composeRule.setContent {
+            CollectorTheme {
+                CollectorScreen(
+                    uiState = sampleUiState().copy(
+                        selectedModelId = "TS60",
+                        ftpReceiveState = FtpReceiveState.Running(
+                            host = "192.168.43.1",
+                            port = 2121,
+                            username = "survlink",
+                            password = "123456",
+                            rootDirectory = java.io.File("/tmp/ts60"),
+                            receivedFiles = emptyList(),
+                            totalBytes = 0L,
+                        ),
+                        ftpEndpointText = "ftp://192.168.43.1:2121",
+                    ),
+                    onInstrumentBrandSelected = {},
+                    onInstrumentModelSelected = {},
+                    onTargetDeviceSelected = {},
+                    onDiscoveryRequested = {},
+                    onStopDiscoveryRequested = {},
+                    onPairDeviceRequested = {},
+                    onConnectRequested = {},
+                    onDisconnectRequested = {},
+                    onStartReceivingRequested = {},
+                    onStopReceivingRequested = {},
+                    onSingleMeasureRequested = {},
+                    onStartImportRequested = {},
+                    onStartReceiverRequested = {},
+                    onStopReceiverRequested = {},
+                    onStopFtpReceiveRequested = {},
+                    onShareImportedFile = {},
+                    onSaveToLocalRequested = {},
+                    onClearRequested = {},
+                    onExportRequested = {},
+                    onExportFormatSelected = {},
+                    onDismissExportDialog = {},
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag(CollectorScreenTags.BottomNavData).performClick()
+
+        composeRule.onNodeWithTag(CollectorScreenTags.FtpProjectTransferPanel)
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeRule.onNodeWithText("TS60 WLAN项目接收")
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeRule.onNodeWithText("ftp://192.168.43.1:2121")
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeRule.onNodeWithText("Settings > Tools > FTP data transfer")
             .performScrollTo()
             .assertIsDisplayed()
     }

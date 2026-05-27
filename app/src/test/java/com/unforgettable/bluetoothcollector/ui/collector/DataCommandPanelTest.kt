@@ -38,7 +38,7 @@ class DataCommandPanelTest {
         }
 
         composeTestRule.onNodeWithText("推荐连接").assertIsDisplayed()
-        composeTestRule.onNodeWithText("GeoCOM WLAN").assertIsDisplayed()
+        composeTestRule.onNodeWithText("WLAN FTP项目传输").assertIsDisplayed()
         composeTestRule.onNodeWithText("Cable RS232").assertIsDisplayed()
         composeTestRule.onNodeWithText("USB Cable").assertIsDisplayed()
         composeTestRule.onNodeWithText("实验监听").assertIsDisplayed()

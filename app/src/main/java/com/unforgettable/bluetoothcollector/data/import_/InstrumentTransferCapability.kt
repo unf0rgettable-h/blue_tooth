@@ -9,7 +9,7 @@ package com.unforgettable.bluetoothcollector.data.import_
 enum class TransferRoute {
     CLASSIC_BLUETOOTH_CLIENT_STREAM,
     ANDROID_RFCOMM_RECEIVER,
-    GEOCOM_WLAN,
+    FTP_WLAN_PROJECT_TRANSFER,
     CABLE_RS232,
     USB_CABLE,
 }
@@ -21,6 +21,7 @@ enum class TransferRoute {
  */
 enum class TransferConfidence {
     VERIFIED_CLIENT_STREAM,
+    VERIFIED_APP_FTP_RECEIVER,
     RECOMMENDED_VENDOR_ROUTE,
     EXPERIMENTAL_DIAGNOSTIC,
     UNSUPPORTED,

@@ -78,12 +78,12 @@ class BluetoothReceiverManager(
         val adapter = bluetoothAdapter
         if (adapter == null) {
             Log.w(TAG, "receiver start failed: bluetooth adapter unavailable")
-            mutableReceiverState.value = ReceiverState.Failed("bluetooth_adapter_not_available")
+            mutableReceiverState.value = ReceiverState.Failed(ReceiverDiagnosticCode.BLUETOOTH_ADAPTER_UNAVAILABLE)
             return@withContext null
         }
         if (!permissionChecker.currentState().canConnect) {
             Log.w(TAG, "receiver start failed: missing BLUETOOTH_CONNECT permission")
-            mutableReceiverState.value = ReceiverState.Failed("missing_bluetooth_connect_permission")
+            mutableReceiverState.value = ReceiverState.Failed(ReceiverDiagnosticCode.MISSING_BLUETOOTH_CONNECT_PERMISSION)
             return@withContext null
         }
         Log.i(
@@ -107,7 +107,7 @@ class BluetoothReceiverManager(
             val firstRead = runInterruptible { inputStream.read(readBuffer) }
             if (firstRead <= 0) {
                 Log.w(TAG, "receiver connected but no data was received")
-                mutableReceiverState.value = ReceiverState.Failed("no_data_received")
+                mutableReceiverState.value = ReceiverState.Failed(ReceiverDiagnosticCode.NO_DATA_RECEIVED)
                 closeAcceptedSocket()
                 return@withContext null
             }
@@ -148,7 +148,7 @@ class BluetoothReceiverManager(
         val bytes = buffer.toByteArray()
         if (bytes.isEmpty()) {
             Log.w(TAG, "receiver finished without any payload")
-            mutableReceiverState.value = ReceiverState.Failed("no_data_received")
+            mutableReceiverState.value = ReceiverState.Failed(ReceiverDiagnosticCode.NO_DATA_RECEIVED)
             return@withContext null
         }
 
@@ -202,7 +202,10 @@ class BluetoothReceiverManager(
             } catch (error: IOException) {
                 Log.w(TAG, "failed to open ${mode.label} RFCOMM server socket: ${error.message}")
                 if (index == attempts.lastIndex) {
-                    mutableReceiverState.value = ReceiverState.Failed("rfcomm_server_open_failed: ${error.message}")
+                    mutableReceiverState.value = ReceiverState.Failed(
+                        code = ReceiverDiagnosticCode.RFCOMM_SERVER_OPEN_FAILED,
+                        detail = error.message,
+                    )
                 }
                 return@forEachIndexed
             }
@@ -221,7 +224,7 @@ class BluetoothReceiverManager(
                 Log.w(TAG, "${mode.label} accept timed out or failed: ${error.message}")
                 if (index == attempts.lastIndex) {
                     Log.w(TAG, "no incoming connection observed on secure/insecure listener")
-                    mutableReceiverState.value = ReceiverState.Failed("no_incoming_connection")
+                    mutableReceiverState.value = ReceiverState.Failed(ReceiverDiagnosticCode.NO_INCOMING_CONNECTION)
                 }
                 null
             } finally {

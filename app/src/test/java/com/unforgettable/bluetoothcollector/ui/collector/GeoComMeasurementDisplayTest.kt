@@ -32,22 +32,25 @@ class GeoComMeasurementDisplayTest {
         }
 
         // Default is DEG
-        composeTestRule.onNodeWithText("Hz: 180.0000°").assertIsDisplayed()
-        composeTestRule.onNodeWithText("V: 90.0000°").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Dist: 12.345m").assertIsDisplayed()
+        composeTestRule.onNodeWithText("水平角").assertIsDisplayed()
+        composeTestRule.onNodeWithText("180.0000°").assertIsDisplayed()
+        composeTestRule.onNodeWithText("垂直角").assertIsDisplayed()
+        composeTestRule.onNodeWithText("90.0000°").assertIsDisplayed()
+        composeTestRule.onNodeWithText("斜距").assertIsDisplayed()
+        composeTestRule.onNodeWithText("12.345m").assertIsDisplayed()
 
         // Click to switch to RAD
         composeTestRule.onNodeWithText("Deg(°)").performClick()
-        composeTestRule.onNodeWithText("Hz: 3.1416 rad").assertIsDisplayed()
-        composeTestRule.onNodeWithText("V: 1.5708 rad").assertIsDisplayed()
+        composeTestRule.onNodeWithText("3.1416 rad").assertIsDisplayed()
+        composeTestRule.onNodeWithText("1.5708 rad").assertIsDisplayed()
 
         // Click to switch to GON
         composeTestRule.onNodeWithText("Rad").performClick()
-        composeTestRule.onNodeWithText("Hz: 200.0000 gon").assertIsDisplayed()
-        composeTestRule.onNodeWithText("V: 100.0000 gon").assertIsDisplayed()
+        composeTestRule.onNodeWithText("200.0000 gon").assertIsDisplayed()
+        composeTestRule.onNodeWithText("100.0000 gon").assertIsDisplayed()
         
         // Click to switch back to DEG
         composeTestRule.onNodeWithText("Gon").performClick()
-        composeTestRule.onNodeWithText("Hz: 180.0000°").assertIsDisplayed()
+        composeTestRule.onNodeWithText("180.0000°").assertIsDisplayed()
     }
 }

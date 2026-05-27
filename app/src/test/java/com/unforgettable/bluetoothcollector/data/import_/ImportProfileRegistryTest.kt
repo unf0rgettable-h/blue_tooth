@@ -18,21 +18,39 @@ class ImportProfileRegistryTest {
         assertEquals("导入存储数据", profile.actionLabel)
         assertEquals(ImportExecutionMode.CLIENT_STREAM, profile.executionMode)
         assertEquals(TransportConnectionMode.CLIENT, profile.transportMode)
+        assertEquals(TransferConfidence.VERIFIED_CLIENT_STREAM, profile.capability.primaryRoute.confidence)
+        assertEquals(TransferRoute.CLASSIC_BLUETOOTH_CLIENT_STREAM, profile.capability.primaryRoute.route)
     }
 
     @Test
-    fun ts60_profile_uses_dedicated_captivate_import_path() {
+    fun ts60_profile_prefers_documented_captivate_routes_and_keeps_android_bluetooth_diagnostic_only() {
         val profile = ImportProfileRegistry.resolve(
             brandId = "leica",
             modelId = "TS60",
         )
 
         assertEquals(ImportProfileVerdict.EXPERIMENTAL, profile.verdict)
-        assertEquals("接收实时GSI数据", profile.liveReceiveLabel)
-        assertEquals("启动导出接收", profile.actionLabel)
-        assertEquals("Captivate 蓝牙导出到手机", profile.protocolSummary)
+        assertEquals("GeoCOM实时测量", profile.liveReceiveLabel)
+        assertEquals("查看TS60连接方案", profile.actionLabel)
+        assertEquals("Captivate推荐WLAN/线缆；Android蓝牙仅实验诊断", profile.protocolSummary)
         assertEquals(ImportExecutionMode.RECEIVER_STREAM, profile.executionMode)
         assertEquals(TransportConnectionMode.RECEIVER, profile.transportMode)
+        assertEquals(
+            listOf(
+                TransferRoute.GEOCOM_WLAN,
+                TransferRoute.CABLE_RS232,
+                TransferRoute.USB_CABLE,
+            ),
+            profile.capability.recommendedRoutes.map { it.route },
+        )
+        assertEquals(
+            TransferConfidence.EXPERIMENTAL_DIAGNOSTIC,
+            profile.capability.experimentalRoutes.single().confidence,
+        )
+        assertEquals(
+            TransferRoute.ANDROID_RFCOMM_RECEIVER,
+            profile.capability.experimentalRoutes.single().route,
+        )
     }
 
     @Test

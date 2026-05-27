@@ -19,4 +19,5 @@ data class ImportProfile(
     val protocolSummary: String,
     val executionMode: ImportExecutionMode = ImportExecutionMode.GUIDANCE_ONLY,
     val transportMode: TransportConnectionMode = TransportConnectionMode.CLIENT,
+    val capability: InstrumentTransferCapability,
 )

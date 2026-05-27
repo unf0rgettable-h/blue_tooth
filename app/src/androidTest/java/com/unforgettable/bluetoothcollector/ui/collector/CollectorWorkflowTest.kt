@@ -47,7 +47,10 @@ class CollectorWorkflowTest {
                     onDisconnectRequested = {},
                     onStartReceivingRequested = {},
                     onStopReceivingRequested = {},
+                    onSingleMeasureRequested = {},
                     onStartImportRequested = {},
+                    onStartReceiverRequested = {},
+                    onStopReceiverRequested = {},
                     onShareImportedFile = {},
                     onSaveToLocalRequested = {},
                     onClearRequested = {},
@@ -65,7 +68,7 @@ class CollectorWorkflowTest {
             }
         }
 
-        composeRule.onNodeWithText("导出并分享").performClick()
+        composeRule.onNodeWithText("导出当前记录").performClick()
         composeRule.onNodeWithTag(CollectorScreenTags.ExportDialog).assertIsDisplayed()
         composeRule.onNodeWithTag(CollectorScreenTags.ExportCsv).assertIsDisplayed()
         composeRule.onNodeWithTag(CollectorScreenTags.ExportTxt).assertIsDisplayed()

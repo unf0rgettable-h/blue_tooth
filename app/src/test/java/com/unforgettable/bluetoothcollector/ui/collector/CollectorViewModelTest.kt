@@ -10,6 +10,8 @@ import com.unforgettable.bluetoothcollector.data.import_.ImportedArtifactStoreCo
 import com.unforgettable.bluetoothcollector.data.import_.ImportedFileFormat
 import com.unforgettable.bluetoothcollector.data.import_.ImportedFileInfo
 import com.unforgettable.bluetoothcollector.data.import_.ImportProfileVerdict
+import com.unforgettable.bluetoothcollector.data.import_.TransferConfidence
+import com.unforgettable.bluetoothcollector.data.import_.TransferRoute
 import com.unforgettable.bluetoothcollector.domain.model.BondedBluetoothDeviceItem
 import com.unforgettable.bluetoothcollector.domain.model.DelimiterStrategy
 import com.unforgettable.bluetoothcollector.domain.model.DiscoveredBluetoothDeviceItem
@@ -389,7 +391,7 @@ class CollectorViewModelTest {
     }
 
     @Test
-    fun ts60_profile_exposes_experimental_receiver_import_path() = runTest(mainDispatcherRule.dispatcher) {
+    fun ts60_profile_exposes_recommended_vendor_routes_and_experimental_receiver_diagnostic() = runTest(mainDispatcherRule.dispatcher) {
         val bluetooth = FakeCollectorBluetoothController(
             pairedDevices = listOf(sampleBondedDevice()),
         )
@@ -406,9 +408,17 @@ class CollectorViewModelTest {
         val importProfile = viewModel.uiState.value.currentImportProfile()
 
         assertEquals(ImportProfileVerdict.EXPERIMENTAL, importProfile.verdict)
-        assertEquals("接收实时GSI数据", importProfile.liveReceiveLabel)
-        assertEquals("启动导出接收", importProfile.actionLabel)
-        assertEquals("Captivate 蓝牙导出到手机", importProfile.protocolSummary)
+        assertEquals("GeoCOM实时测量", importProfile.liveReceiveLabel)
+        assertEquals("查看TS60连接方案", importProfile.actionLabel)
+        assertEquals("Captivate推荐WLAN/线缆；Android蓝牙仅实验诊断", importProfile.protocolSummary)
+        assertEquals(
+            listOf(TransferRoute.GEOCOM_WLAN, TransferRoute.CABLE_RS232, TransferRoute.USB_CABLE),
+            importProfile.capability.recommendedRoutes.map { it.route },
+        )
+        assertEquals(
+            TransferConfidence.EXPERIMENTAL_DIAGNOSTIC,
+            importProfile.capability.experimentalRoutes.single().confidence,
+        )
     }
 
     @Test
@@ -614,6 +624,14 @@ class CollectorViewModelTest {
         assertEquals(ReceiverState.Idle, viewModel.uiState.value.receiverState)
         assertFalse(viewModel.uiState.value.isReceiverDiscoverable)
         assertEquals("receiver_discoverable_denied", viewModel.uiState.value.statusMessage)
+        assertEquals(
+            com.unforgettable.bluetoothcollector.data.bluetooth.ReceiverDiagnosticCode.DISCOVERABILITY_DENIED,
+            viewModel.uiState.value.receiverDiagnostics.last().code,
+        )
+        assertEquals(
+            com.unforgettable.bluetoothcollector.data.bluetooth.ReceiverDiagnosticSeverity.WARNING,
+            viewModel.uiState.value.receiverDiagnostics.last().severity,
+        )
     }
 
     @Test
@@ -655,11 +673,42 @@ class CollectorViewModelTest {
         viewModel.onReceiverDiscoverabilityGranted(300)
         advanceUntilIdle()
 
-        val diagnostics = viewModel.uiState.value.receiverDiagnostics.joinToString("\n")
+        val diagnostics = viewModel.uiState.value.receiverDiagnostics.joinToString("\n") { it.message }
         assertTrue(diagnostics.contains("300s"))
         assertTrue(diagnostics.contains("SPP UUID"))
         assertTrue(diagnostics.contains("secure / insecure"))
         assertTrue(diagnostics.contains("配对"))
+        assertTrue(
+            viewModel.uiState.value.receiverDiagnostics.any {
+                it.code == com.unforgettable.bluetoothcollector.data.bluetooth.ReceiverDiagnosticCode.SPP_UUID_DECLARED
+            },
+        )
+    }
+
+    @Test
+    fun receiver_listen_failure_adds_structured_no_incoming_connection_diagnostic() = runTest(mainDispatcherRule.dispatcher) {
+        val receiverManager = FakeBluetoothReceiverController().apply {
+            stateAfterListen = ReceiverState.Failed(
+                code = com.unforgettable.bluetoothcollector.data.bluetooth.ReceiverDiagnosticCode.NO_INCOMING_CONNECTION,
+            )
+        }
+        val viewModel = createViewModel(receiverManager = receiverManager)
+
+        viewModel.onInstrumentBrandSelected("leica")
+        viewModel.onInstrumentModelSelected("TS60")
+        advanceUntilIdle()
+
+        viewModel.onReceiverDiscoverabilityGranted(120)
+        advanceUntilIdle()
+
+        assertEquals(
+            com.unforgettable.bluetoothcollector.data.bluetooth.ReceiverDiagnosticCode.NO_INCOMING_CONNECTION,
+            viewModel.uiState.value.receiverDiagnostics.last().code,
+        )
+        assertEquals(
+            com.unforgettable.bluetoothcollector.data.bluetooth.ReceiverDiagnosticSeverity.ERROR,
+            viewModel.uiState.value.receiverDiagnostics.last().severity,
+        )
     }
 
     @Test
@@ -991,6 +1040,7 @@ private class FakeBluetoothReceiverController : BluetoothReceiverController {
     override val receiverState: StateFlow<ReceiverState> = mutableReceiverState
     var listenCalls: Int = 0
     var nextFile: File? = null
+    var stateAfterListen: ReceiverState? = null
 
     override suspend fun listenAndReceive(
         importDirectory: File,
@@ -1000,6 +1050,10 @@ private class FakeBluetoothReceiverController : BluetoothReceiverController {
     ): File? {
         listenCalls += 1
         mutableReceiverState.value = ReceiverState.Listening
+        stateAfterListen?.let {
+            mutableReceiverState.value = it
+            return null
+        }
         val result = nextFile
         if (result != null) {
             mutableReceiverState.value = ReceiverState.Completed(

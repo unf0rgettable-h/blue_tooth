@@ -3,6 +3,9 @@ package com.unforgettable.bluetoothcollector.ui.collector
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.unforgettable.bluetoothcollector.data.bluetooth.BluetoothConnectionState
+import com.unforgettable.bluetoothcollector.data.bluetooth.ReceiverDiagnosticCode
+import com.unforgettable.bluetoothcollector.data.bluetooth.ReceiverDiagnosticEntry
+import com.unforgettable.bluetoothcollector.data.bluetooth.ReceiverDiagnosticSeverity
 import com.unforgettable.bluetoothcollector.data.bluetooth.BluetoothReceiverController
 import com.unforgettable.bluetoothcollector.data.bluetooth.ReceiverState
 import com.unforgettable.bluetoothcollector.data.instrument.InstrumentCatalog
@@ -13,10 +16,6 @@ import com.unforgettable.bluetoothcollector.data.import_.ImportExecutionMode
 import com.unforgettable.bluetoothcollector.data.import_.ImportProfileVerdict
 import com.unforgettable.bluetoothcollector.data.protocol.ProtocolHandler
 import com.unforgettable.bluetoothcollector.data.protocol.ProtocolHandlerFactory
-import com.unforgettable.bluetoothcollector.data.protocol.ProtocolTransport
-import com.unforgettable.bluetoothcollector.domain.model.BondedBluetoothDeviceItem
-import com.unforgettable.bluetoothcollector.domain.model.DelimiterStrategy
-import com.unforgettable.bluetoothcollector.domain.model.DiscoveredBluetoothDeviceItem
 import com.unforgettable.bluetoothcollector.domain.model.ExportFormat
 import com.unforgettable.bluetoothcollector.domain.model.InstrumentModel
 import com.unforgettable.bluetoothcollector.domain.model.MeasurementRecord
@@ -38,99 +37,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-
-data class RestoredCollectorSession(
-    val session: Session,
-    val records: List<MeasurementRecord>,
-)
-
-sealed interface CollectorBluetoothControllerEvent {
-    data object AdapterPoweredOff : CollectorBluetoothControllerEvent
-    data object LinkLost : CollectorBluetoothControllerEvent
-    data class DiscoverabilityChanged(
-        val isDiscoverable: Boolean,
-    ) : CollectorBluetoothControllerEvent
-}
-
-sealed interface CollectorUiEvent {
-    data class ShareExport(
-        val file: File,
-        val format: ExportFormat,
-    ) : CollectorUiEvent
-
-    data class ShareImportedFile(
-        val file: File,
-        val mimeType: String,
-    ) : CollectorUiEvent
-
-    data class SavedToLocal(
-        val fileName: String,
-    ) : CollectorUiEvent
-}
-
-fun interface CollectorTimeProvider {
-    fun now(): String
-}
-
-interface CollectorDataRepository {
-    suspend fun restoreCurrentSession(): RestoredCollectorSession?
-
-    suspend fun ensureCurrentSession(
-        startedAt: String,
-        instrumentBrand: String,
-        instrumentModel: String,
-        bluetoothDeviceName: String,
-        bluetoothDeviceAddress: String,
-        delimiterStrategy: DelimiterStrategy,
-    ): Session
-
-    suspend fun appendRecord(
-        sessionId: String,
-        record: MeasurementRecord,
-    )
-
-    suspend fun clearCurrentSession()
-}
-
-interface CollectorBluetoothController : ProtocolTransport {
-    val nearbyDevices: StateFlow<List<DiscoveredBluetoothDeviceItem>>
-    val pairedDevices: StateFlow<List<BondedBluetoothDeviceItem>>
-    val isDiscovering: StateFlow<Boolean>
-    val permissionState: StateFlow<CollectorPermissionUiState>
-    val controllerEvents: Flow<CollectorBluetoothControllerEvent>
-
-    fun refreshPermissionState()
-
-    suspend fun refreshPairedDevices()
-
-    suspend fun startDiscovery(connectionState: BluetoothConnectionState): Boolean
-
-    suspend fun cancelDiscovery(): Boolean
-
-    suspend fun connect(
-        address: String,
-        currentSessionDeviceAddress: String? = null,
-    ): Result<BondedBluetoothDeviceItem>
-
-    suspend fun requestBond(
-        address: String,
-        currentSessionDeviceAddress: String? = null,
-    ): Boolean
-
-    suspend fun disconnect()
-
-    suspend fun drainIncomingBytes(maxBytes: Int = 1024): ByteArray
-
-    fun shutdown()
-}
-
-interface CollectorExportManager {
-    suspend fun export(
-        session: Session,
-        records: List<MeasurementRecord>,
-        format: ExportFormat,
-    ): File
-}
 
 class CollectorViewModel(
     private val repository: CollectorDataRepository,
@@ -197,7 +103,11 @@ class CollectorViewModel(
                 when (event) {
                     CollectorBluetoothControllerEvent.AdapterPoweredOff -> {
                         stopReceivingInternal(resumeIdleDrain = false)
-                        appendReceiverDiagnostic("蓝牙已关闭，已退出接收模式")
+                        appendReceiverDiagnostic(
+                            code = ReceiverDiagnosticCode.ADAPTER_POWERED_OFF,
+                            severity = ReceiverDiagnosticSeverity.ERROR,
+                            message = "蓝牙已关闭，已退出接收模式",
+                        )
                         mutableUiState.update {
                             it.copy(
                                 connectionState = BluetoothConnectionState.DISCONNECTED,
@@ -210,12 +120,20 @@ class CollectorViewModel(
                         if (uiState.value.usesReceiverImportMode() &&
                             (receiverJob?.isActive == true || uiState.value.receiverState != ReceiverState.Idle)
                         ) {
-                            appendReceiverDiagnostic("已忽略接收模式下的链路断开广播")
+                            appendReceiverDiagnostic(
+                                code = ReceiverDiagnosticCode.RECEIVER_LINK_LOST_IGNORED,
+                                severity = ReceiverDiagnosticSeverity.INFO,
+                                message = "已忽略接收模式下的链路断开广播",
+                            )
                             return@collectLatest
                         }
                         importedArtifactStore?.preserveLastSuccessfulOnFailure()
                         stopReceivingInternal(resumeIdleDrain = false)
-                        appendReceiverDiagnostic("蓝牙链路断开")
+                        appendReceiverDiagnostic(
+                            code = ReceiverDiagnosticCode.BLUETOOTH_LINK_LOST,
+                            severity = ReceiverDiagnosticSeverity.ERROR,
+                            message = "蓝牙链路断开",
+                        )
                         mutableUiState.update {
                             it.copy(
                                 connectionState = BluetoothConnectionState.DISCONNECTED,
@@ -225,14 +143,22 @@ class CollectorViewModel(
                     }
                     is CollectorBluetoothControllerEvent.DiscoverabilityChanged -> {
                         if (event.isDiscoverable) {
-                            appendReceiverDiagnostic("系统蓝牙已进入可发现状态")
+                            appendReceiverDiagnostic(
+                                code = ReceiverDiagnosticCode.DISCOVERABILITY_ENABLED,
+                                severity = ReceiverDiagnosticSeverity.INFO,
+                                message = "系统蓝牙已进入可发现状态",
+                            )
                             mutableUiState.update {
                                 it.copy(
                                     isReceiverDiscoverable = true,
                                 )
                             }
                         } else {
-                            appendReceiverDiagnostic("系统蓝牙已退出可发现状态")
+                            appendReceiverDiagnostic(
+                                code = ReceiverDiagnosticCode.DISCOVERABILITY_EXPIRED,
+                                severity = ReceiverDiagnosticSeverity.WARNING,
+                                message = "系统蓝牙已退出可发现状态",
+                            )
                             mutableUiState.update {
                                 it.copy(
                                     isReceiverDiscoverable = false,
@@ -743,10 +669,7 @@ class CollectorViewModel(
     }
 
     private fun currentInstrumentModel(): InstrumentModel? {
-        return InstrumentCatalog.models.firstOrNull {
-            it.modelId == uiState.value.selectedModelId &&
-                it.brandId == uiState.value.selectedBrandId
-        }
+        return uiState.value.selectedInstrumentModel()
     }
 
     private suspend fun runClientImportLoop(
@@ -812,7 +735,16 @@ class CollectorViewModel(
     // --- Experimental TS60 RFCOMM Receiver Mode ---
 
     fun onReceiverStartPrerequisiteFailed(reason: String) {
-        appendReceiverDiagnostic("监听前置条件失败：$reason")
+        val code = when (reason) {
+            "bluetooth_disabled" -> ReceiverDiagnosticCode.BLUETOOTH_DISABLED
+            "missing_receiver_permission" -> ReceiverDiagnosticCode.MISSING_RECEIVER_PERMISSION
+            else -> ReceiverDiagnosticCode.MISSING_RECEIVER_PERMISSION
+        }
+        appendReceiverDiagnostic(
+            code = code,
+            severity = ReceiverDiagnosticSeverity.ERROR,
+            message = "监听前置条件失败：$reason",
+        )
         mutableUiState.update {
             it.copy(
                 statusMessage = reason,
@@ -822,7 +754,11 @@ class CollectorViewModel(
     }
 
     fun onReceiverDiscoverabilityRequested() {
-        appendReceiverDiagnostic("已请求系统开启蓝牙可发现模式")
+        appendReceiverDiagnostic(
+            code = ReceiverDiagnosticCode.DISCOVERABILITY_REQUESTED,
+            severity = ReceiverDiagnosticSeverity.INFO,
+            message = "已请求系统开启蓝牙可发现模式",
+        )
         mutableUiState.update {
             it.copy(
                 receiverState = ReceiverState.RequestingDiscoverability,
@@ -832,7 +768,11 @@ class CollectorViewModel(
     }
 
     fun onReceiverDiscoverabilityDenied() {
-        appendReceiverDiagnostic("用户拒绝或系统未授予蓝牙可发现模式")
+        appendReceiverDiagnostic(
+            code = ReceiverDiagnosticCode.DISCOVERABILITY_DENIED,
+            severity = ReceiverDiagnosticSeverity.WARNING,
+            message = "用户拒绝或系统未授予蓝牙可发现模式",
+        )
         mutableUiState.update {
             it.copy(
                 receiverState = ReceiverState.Idle,
@@ -843,11 +783,31 @@ class CollectorViewModel(
     }
 
     fun onReceiverDiscoverabilityGranted(durationSeconds: Int) {
-        appendReceiverDiagnostic("蓝牙可发现模式已启用：${durationSeconds}s")
-        appendReceiverDiagnostic("请在 ${durationSeconds}s 内让 TS60 搜索当前手机")
-        appendReceiverDiagnostic("使用标准 SPP UUID：${com.unforgettable.bluetoothcollector.data.bluetooth.BluetoothReceiverManager.SPP_UUID}")
-        appendReceiverDiagnostic("若 secure 配对失败，将继续尝试 secure / insecure RFCOMM 监听")
-        appendReceiverDiagnostic("如 TS60 需要加密串口连接，请先在系统蓝牙完成配对")
+        appendReceiverDiagnostic(
+            code = ReceiverDiagnosticCode.DISCOVERABILITY_ENABLED,
+            severity = ReceiverDiagnosticSeverity.INFO,
+            message = "蓝牙可发现模式已启用：${durationSeconds}s",
+        )
+        appendReceiverDiagnostic(
+            code = ReceiverDiagnosticCode.WAITING_FOR_TS60_CONNECTION,
+            severity = ReceiverDiagnosticSeverity.INFO,
+            message = "请在 ${durationSeconds}s 内让 TS60 搜索当前手机",
+        )
+        appendReceiverDiagnostic(
+            code = ReceiverDiagnosticCode.SPP_UUID_DECLARED,
+            severity = ReceiverDiagnosticSeverity.INFO,
+            message = "使用标准 SPP UUID：${com.unforgettable.bluetoothcollector.data.bluetooth.BluetoothReceiverManager.SPP_UUID}",
+        )
+        appendReceiverDiagnostic(
+            code = ReceiverDiagnosticCode.RFCOMM_SECURE_INSECURE_ATTEMPT,
+            severity = ReceiverDiagnosticSeverity.INFO,
+            message = "若 secure 配对失败，将继续尝试 secure / insecure RFCOMM 监听",
+        )
+        appendReceiverDiagnostic(
+            code = ReceiverDiagnosticCode.PAIRING_REQUIRED_HINT,
+            severity = ReceiverDiagnosticSeverity.WARNING,
+            message = "如 TS60 需要加密串口连接，请先在系统蓝牙完成配对",
+        )
         mutableUiState.update {
             it.copy(
                 isReceiverDiscoverable = true,
@@ -860,12 +820,20 @@ class CollectorViewModel(
     fun onStartReceiverRequested() {
         val manager = receiverManager ?: return
         if (uiState.value.currentImportProfile().executionMode != ImportExecutionMode.RECEIVER_STREAM) {
-            appendReceiverDiagnostic("当前型号未启用导出接收模式")
+            appendReceiverDiagnostic(
+                code = ReceiverDiagnosticCode.RECEIVER_MODE_NOT_SUPPORTED,
+                severity = ReceiverDiagnosticSeverity.WARNING,
+                message = "当前型号未启用导出接收模式",
+            )
             mutableUiState.update { it.copy(statusMessage = "receiver_mode_not_supported_for_selected_model") }
             return
         }
         if (uiState.value.isReceiving || uiState.value.isImporting) {
-            appendReceiverDiagnostic("监听启动失败：当前仍有接收/导入任务")
+            appendReceiverDiagnostic(
+                code = ReceiverDiagnosticCode.RECEIVER_CONFLICTS_ACTIVE_OPERATION,
+                severity = ReceiverDiagnosticSeverity.WARNING,
+                message = "监听启动失败：当前仍有接收/导入任务",
+            )
             mutableUiState.update { it.copy(statusMessage = "receiver_conflicts_with_active_operation") }
             return
         }
@@ -873,7 +841,11 @@ class CollectorViewModel(
 
         receiverJob = scope.launch {
             if (uiState.value.connectionState != BluetoothConnectionState.DISCONNECTED) {
-                appendReceiverDiagnostic("启动监听前断开旧的 client 连接")
+                appendReceiverDiagnostic(
+                    code = ReceiverDiagnosticCode.DISCONNECT_CLIENT_BEFORE_LISTEN,
+                    severity = ReceiverDiagnosticSeverity.INFO,
+                    message = "启动监听前断开旧的 client 连接",
+                )
                 stopReceivingInternal(resumeIdleDrain = false)
                 bluetoothController.disconnect()
                 mutableUiState.update {
@@ -885,14 +857,26 @@ class CollectorViewModel(
                 }
             }
             manager.resetState()
-            appendReceiverDiagnostic("按 Bluetooth Classic 串口模式等待 TS60 主动连入")
-            appendReceiverDiagnostic("开始监听 RFCOMM 传入连接")
+            appendReceiverDiagnostic(
+                code = ReceiverDiagnosticCode.WAITING_FOR_TS60_CONNECTION,
+                severity = ReceiverDiagnosticSeverity.INFO,
+                message = "按 Bluetooth Classic 串口模式等待 TS60 主动连入",
+            )
+            appendReceiverDiagnostic(
+                code = ReceiverDiagnosticCode.RFCOMM_LISTENING,
+                severity = ReceiverDiagnosticSeverity.INFO,
+                message = "开始监听 RFCOMM 传入连接",
+            )
             val file = manager.listenAndReceive(
                 importDirectory = importDirectory,
                 timeProvider = timeProvider::now,
             )
             if (file != null) {
-                appendReceiverDiagnostic("已接收导出文件：${file.name}")
+                appendReceiverDiagnostic(
+                    code = ReceiverDiagnosticCode.RECEIVER_COMPLETED,
+                    severity = ReceiverDiagnosticSeverity.SUCCESS,
+                    message = "已接收导出文件：${file.name}",
+                )
                 val header = file.readBytes().copyOf(minOf(file.length().toInt(), 512))
                 val format = com.unforgettable.bluetoothcollector.data.import_.ImportedFileFormat.detect(header)
                 val info = com.unforgettable.bluetoothcollector.data.import_.ImportedFileInfo(
@@ -909,13 +893,26 @@ class CollectorViewModel(
                     )
                 }
             } else {
-                appendReceiverDiagnostic("未收到任何传入连接或文件")
+                val finalState = manager.receiverState.value
+                if (finalState is ReceiverState.Failed) {
+                    appendReceiverFailureDiagnostic(finalState)
+                } else {
+                    appendReceiverDiagnostic(
+                        code = ReceiverDiagnosticCode.NO_INCOMING_CONNECTION,
+                        severity = ReceiverDiagnosticSeverity.ERROR,
+                        message = "未收到任何传入连接或文件",
+                    )
+                }
             }
         }
     }
 
     fun onStopReceiverRequested() {
-        appendReceiverDiagnostic("已请求停止监听")
+        appendReceiverDiagnostic(
+            code = ReceiverDiagnosticCode.RECEIVER_CANCELLED,
+            severity = ReceiverDiagnosticSeverity.INFO,
+            message = "已请求停止监听",
+        )
         receiverManager?.cancel()
         receiverJob?.cancel()
         receiverJob = null
@@ -952,9 +949,46 @@ class CollectorViewModel(
         }
     }
 
-    private fun appendReceiverDiagnostic(message: String) {
+    /**
+     * 把 ReceiverState.Failed 转成稳定诊断条目。
+     *
+     * 这个映射集中在 ViewModel，UI 只展示结果；后续 agent 增加失败原因时只需要补
+     * ReceiverDiagnosticCode 和这里的中文解释，不需要搜索多个 Composable。
+     */
+    private fun appendReceiverFailureDiagnostic(failed: ReceiverState.Failed) {
+        val message = when (failed.code) {
+            ReceiverDiagnosticCode.BLUETOOTH_ADAPTER_UNAVAILABLE -> "设备不支持蓝牙或蓝牙适配器不可用"
+            ReceiverDiagnosticCode.MISSING_BLUETOOTH_CONNECT_PERMISSION -> "缺少 BLUETOOTH_CONNECT 权限"
+            ReceiverDiagnosticCode.RFCOMM_SERVER_OPEN_FAILED -> "无法打开 RFCOMM 服务端：${failed.detail.orEmpty()}"
+            ReceiverDiagnosticCode.NO_DATA_RECEIVED -> "TS60 已连接但没有发送数据"
+            ReceiverDiagnosticCode.NO_INCOMING_CONNECTION -> "未观察到 TS60 主动连接 Android RFCOMM 服务"
+            else -> "接收模式失败：${failed.reason}"
+        }
+        appendReceiverDiagnostic(
+            code = failed.code,
+            severity = ReceiverDiagnosticSeverity.ERROR,
+            message = message,
+        )
+    }
+
+    /**
+     * 追加 receiver 诊断。
+     *
+     * 诊断保留结构化 code/severity/message，方便 coding agents 通过枚举追踪状态机；
+     * 不再把裸字符串作为唯一事实来源。
+     */
+    private fun appendReceiverDiagnostic(
+        code: ReceiverDiagnosticCode,
+        severity: ReceiverDiagnosticSeverity,
+        message: String,
+    ) {
         mutableUiState.update { current ->
-            val next = (current.receiverDiagnostics + message).takeLast(MAX_RECEIVER_DIAGNOSTICS)
+            val entry = ReceiverDiagnosticEntry(
+                code = code,
+                severity = severity,
+                message = message,
+            )
+            val next = (current.receiverDiagnostics + entry).takeLast(MAX_RECEIVER_DIAGNOSTICS)
             current.copy(receiverDiagnostics = next)
         }
     }

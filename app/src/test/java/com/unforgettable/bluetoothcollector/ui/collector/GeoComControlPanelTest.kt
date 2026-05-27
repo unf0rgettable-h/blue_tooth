@@ -29,8 +29,8 @@ class GeoComControlPanelTest {
             )
         }
         
-        composeTestRule.onNodeWithText("Start Auto").assertIsNotEnabled()
-        composeTestRule.onNodeWithText("Measure Once").assertIsNotEnabled()
+        composeTestRule.onNodeWithText("自动测量").assertIsNotEnabled()
+        composeTestRule.onNodeWithText("单次测量").assertIsNotEnabled()
     }
 
     @Test
@@ -44,8 +44,8 @@ class GeoComControlPanelTest {
             )
         }
         
-        composeTestRule.onNodeWithText("Start Auto").assertIsEnabled()
-        composeTestRule.onNodeWithText("Measure Once").assertIsEnabled()
+        composeTestRule.onNodeWithText("自动测量").assertIsEnabled()
+        composeTestRule.onNodeWithText("单次测量").assertIsEnabled()
     }
 
     @Test
@@ -59,8 +59,8 @@ class GeoComControlPanelTest {
             )
         }
         
-        composeTestRule.onNodeWithText("Stop").assertIsEnabled()
-        composeTestRule.onNodeWithText("Measure Once").assertIsNotEnabled()
+        composeTestRule.onNodeWithText("停止测量").assertIsEnabled()
+        composeTestRule.onNodeWithText("单次测量").assertIsNotEnabled()
     }
 
     @Test
@@ -77,8 +77,8 @@ class GeoComControlPanelTest {
             )
         }
         
-        composeTestRule.onNodeWithText("Start Auto").performClick()
-        composeTestRule.onNodeWithText("Measure Once").performClick()
+        composeTestRule.onNodeWithText("自动测量").performClick()
+        composeTestRule.onNodeWithText("单次测量").performClick()
 
         assert(startStopClicked)
         assert(singleMeasureClicked)

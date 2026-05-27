@@ -3,30 +3,35 @@ package com.unforgettable.bluetoothcollector.ui.theme
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.unit.dp
 
 private val CollectorLightColors: ColorScheme = lightColorScheme(
-    primary = Color(0xFF0B5D5A),
-    onPrimary = Color(0xFFF5FAF9),
-    primaryContainer = Color(0xFFD3ECE8),
-    onPrimaryContainer = Color(0xFF0C3635),
-    secondary = Color(0xFF596B77),
+    primary = Color(0xFF0066CC),
+    onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = Color(0xFFD9E8FF),
+    onPrimaryContainer = Color(0xFF003A70),
+    secondary = Color(0xFF4E6577),
     onSecondary = Color(0xFFFFFFFF),
-    secondaryContainer = Color(0xFFDCE5EB),
-    onSecondaryContainer = Color(0xFF23323B),
-    tertiary = Color(0xFF9A6A26),
+    secondaryContainer = Color(0xFFD6E4F0),
+    onSecondaryContainer = Color(0xFF1B3446),
+    tertiary = Color(0xFF7A5C00),
     onTertiary = Color(0xFFFFFFFF),
-    background = Color(0xFFF4F1EA),
-    onBackground = Color(0xFF1C262C),
-    surface = Color(0xFFFFFCF6),
-    onSurface = Color(0xFF1C262C),
-    surfaceVariant = Color(0xFFE4E0D6),
-    onSurfaceVariant = Color(0xFF46545E),
-    outline = Color(0xFF7A8C96),
-    error = Color(0xFFB33F3F),
+    tertiaryContainer = Color(0xFFFFE08A),
+    onTertiaryContainer = Color(0xFF2A2000),
+    background = Color(0xFFF5F6F8),
+    onBackground = Color(0xFF1D1D1F),
+    surface = Color(0xFFFFFFFF),
+    onSurface = Color(0xFF1D1D1F),
+    surfaceVariant = Color(0xFFE8EAED),
+    onSurfaceVariant = Color(0xFF4C5661),
+    outline = Color(0xFF8A9099),
+    error = Color(0xFFB3261E),
     onError = Color(0xFFFFFFFF),
 )
 
@@ -52,6 +57,14 @@ private val CollectorDarkColors: ColorScheme = darkColorScheme(
     onError = Color(0xFF690005),
 )
 
+private val CollectorShapes = Shapes(
+    extraSmall = RoundedCornerShape(6.dp),
+    small = RoundedCornerShape(8.dp),
+    medium = RoundedCornerShape(12.dp),
+    large = RoundedCornerShape(18.dp),
+    extraLarge = RoundedCornerShape(24.dp),
+)
+
 @Composable
 fun CollectorTheme(
     useDarkTheme: Boolean = isSystemInDarkTheme(),
@@ -59,6 +72,7 @@ fun CollectorTheme(
 ) {
     MaterialTheme(
         colorScheme = if (useDarkTheme) CollectorDarkColors else CollectorLightColors,
+        shapes = CollectorShapes,
         content = content,
     )
 }
